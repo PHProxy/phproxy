@@ -1,51 +1,37 @@
-PHProxy Source Code README
-_____________________________________________________________________
+# PHProxy - Web based PHP Proxy
 
-Source Code Version 0.5b2 - January 20th 2007
-Latest Version: http://www.sourceforge.net/projects/poxy/
+Originaly developed by Abdullah Arif in [SourceForge](http://www.sourceforge.net/projects/poxy/) during 2002-2007 and then abandoned.
+This project needs to live, this is why I  have copied it here and will continue to develop it.
 
-Copyright 2002-2007 Abdullah Arif
+# Support & bug reports
+You may use github functionality for bug reports or my mail phproxy@miglen.com and I'll try to fix them.
+Here are the original bug report contacts: phproxy.support@gmail.com
 
+# Table of Contents
+---
 
-Contact
-_____________________________________________________________________
-
-Email: phproxy.support@gmail.com
-Website: http://whitefyre.com/
-
-
-Support and Bug Reports
-_____________________________________________________________________
-
-http://whitefyre.com/forums/
-phproxy.support@gmail.com
-
-
-Table of Contents
-_____________________________________________________________________
-
-1. License
-2. What is PHProxy?
-3. How it Works
-4. Requirements
-5. Installation
-6. Configurable Script Variables
-7. Available Options
-8. Disclaimer
-9. Bugs and Limitations
-10. ChangeLog, FAQ, TODO, LICENSE, Bugs, Limitations
-11. Credits
+	1. License
+	2. What is PHProxy?
+	3. How it Works
+	4. Requirements
+	5. Installation
+	6. Configurable Script Variables
+	7. Available Options
+	8. Disclaimer
+	9. Bugs and Limitations
+	10. ChangeLog, FAQ, TODO, LICENSE, Bugs, Limitations
+	11. Credits
 
 
-1. License
-_____________________________________________________________________
+# 1. License
+---
 
 This source code is released under the GPL.
 A copy of the license in provided in this package in the file
  named LICENSE.txt
 
 
-2. What is PHProxy?
+# 2. What is PHProxy?
 _____________________________________________________________________
 
 
@@ -62,7 +48,7 @@ resources to deliver them to you.
 
 
 
-3. How it Works
+# 3. How it Works
 _____________________________________________________________________
 
 You simply supply a URL to the form and click Browse. The script then 
@@ -73,41 +59,41 @@ detail, view the source code.
 Comments have yet to be added.
 
 
-4. Requirements
+# 4. Requirements
 _____________________________________________________________________
 
-- PHP version >= 4.2.0
-- safe_mode turned off or at least having the fsockopen() function not disabled
-- PHP version >= 4.3.0 and OpenSSL for support for secure connections (https)
-- Zlib for output compression
-- file_uploads turned On for HTTP file uploads.
+ * PHP version >= 4.2.0
+ * safe_mode turned off or at least having the fsockopen() function not disabled
+ * PHP version >= 4.3.0 and OpenSSL for support for secure connections (https)
+ * Zlib for output compression
+ * file_uploads turned On for HTTP file uploads.
 
 
-5. Installation
+# 5. Installation
 _____________________________________________________________________
 
 Simply upload these files to a directory of your liking (prefrebly in its own directory):
 
-- index.php
-- index.inc.php
-- style.css
+ * index.php
+ * index.inc.php
+ * style.css
 
 You can rename index.php without any problems, but not index.inc.php.
 
 A good idea is to change these PHP settings in your php.ini file
 or for instance Apache's httpd.conf or per directory .htaccess files:
 
-- register_globals = Off (safer for your script)
-- magic_quotes_gpc = Off (avoids unnecessary, slow stripslashing in the script)
-- always_populate_raw_post_data = Off (no need for this extraneous data)
-- zlib.output_compression = On (to enable output compression, better than doing it inside the script)
+ * register_globals = Off (safer for your script)
+ * magic_quotes_gpc = Off (avoids unnecessary, slow stripslashing in the script)
+ * always_populate_raw_post_data = Off (no need for this extraneous data)
+ * zlib.output_compression = On (to enable output compression, better than doing it inside the script)
 
 Your script will still function normally without these settings though.
 
 All you need to do now is to access index.php and start browsing!
 
 
-6. Configurable Script Variables
+# 6. Configurable Script Variables
 _____________________________________________________________________
 
 These variables are available at the beginning of the index.php file:
@@ -149,14 +135,14 @@ compress_output:           whether to use gzip compression or not.
                            default: 0            
 
 
-- $_flags:
+ * $_flags:
 __________
 
 This array contains the default values for the browsing options which
  are explained in section 7.
 
 
-- $_frozen_flags:
+ * $_frozen_flags:
 _________________
 
 When a flag is frozen, it is no longer shown in the URL forms, and the
@@ -167,13 +153,13 @@ When a flag is frozen, it is no longer shown in the URL forms, and the
 0 is for not frozen. 1 is for frozen. default: all are unfrozen.
 
 
-- $_labels:
+ * $_labels:
 ___________
 
 The labels on flags.
 
 
-- $_hosts:
+ * $_hosts:
 __________
 
 Each entry in this array is a seperate piece of regular expression 
@@ -184,7 +170,7 @@ The first default entry contains the regular expression for private
 networks which are not supposed to be shown on the Internet.
 
 
-- $_hotlink_domains:
+ * $_hotlink_domains:
 ____________________
 
 This array holds entries of domain names which are allowed to hotlink
@@ -199,13 +185,13 @@ accounted for. Your website's domain name is also automatically included
 in this array.
 
 
-- $_insert:
+ * $_insert:
 ___________
 
 This does nothing yet.
 
 
-7. Available Options
+# 7. Available Options
 _____________________________________________________________________
 
 These options are available to you through the web interface. 
@@ -237,7 +223,7 @@ Values can either be 1 (true) or 0 (false).
 * only one type of encoding will be used even if both are selected
 
 
-8. Disclaimer
+# 8. Disclaimer
 _____________________________________________________________________
 
 Since this script basically bypasses restrictions that were imposed
@@ -248,7 +234,7 @@ your own risk. I will not be responsible for any damages done or any
 
 
 
-9. Bugs and Limitations
+# 9. Bugs and Limitations
 _____________________________________________________________________
 
 PHP is retarded by nature, and as such, some problems arise that 
@@ -305,14 +291,14 @@ PHProxy also doesn't support FTP. This may or may not be introduced
 in future releases, but there are no current plans for FTP support.
 
 
-10. ChangeLog, TODO, LICENSE
+# 10. ChangeLog, TODO, LICENSE
 _____________________________________________________________________
 
 Refer to the accompanying files.
 
 
 
-11. Credits
+# 11. Credits
 _____________________________________________________________________
 
 James Marshall (http://www.jmarshall.com/) for his excellent CGIProxy
