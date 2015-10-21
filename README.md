@@ -197,28 +197,20 @@ _____________________________________________________________________
 These options are available to you through the web interface. 
 You can also edit the default values in the $_flags in index.php
 Values can either be 1 (true) or 0 (false). 
-
-+-------------------------------------------------------------------+
-| Option         | Explanation                                      |
-+-------------------------------------------------------------------+
-| Include Form   | Includes a mini URL-form on every HTML page for  |
-|                | easier browsing.                                 |
-| Remove Scripts | Remove all sorts of client-side scripting        |
-|                | (i.e. JavaScript). Removal is not perfect. Some  |
-|                | scripts might slip by here and there.            |
-| Accept Cookies | Accept HTTP cookies                              |
-| Show Images    | Show images. You might want to turn this off if  |
-|                | you want to save your server's bandwith.         |
-| Show Referer   | Show referring website in HTTP headers. This     |
-|                | will show the base URL for the website you're    |
-|                | currently viewing. Because many website disable  |
-|                | HotLinking, this can be quite useful.            |
-| Rotate13       | Use rotate13 encoding on the URL. *              | 
-| Base64         | Use base64 encoding on the URL. *                |
-| Strip Meta     | Strip meta HTML tags                             |
-| Strip Title    | Strip Website title                              |
-| Session Cookies| Store cookies for this current session only      |
-+-------------------------------------------------------------------+
+_____________________________________________________________________
+| Option          | Explanation                                                                                                                                                                      |
+|-----------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Include Form    | Includes a mini URL-form on every HTML page for easier browsing.                                                                                                                 |
+| Remove Scripts  | Remove all sorts of client-side scripting (i.e. JavaScript). Removal is not perfect. Some scripts might slip by here and there.                                                  |
+| Accept Cookies  |                                                                                                                                                                                  |
+| Show Images     | Show images. You might want to turn this off if you want to save your server's bandwith.                                                                                         |
+| Show Referer    | Show referring website in HTTP headers. This will show the base URL for the website you're currently viewing. Because many website disable HotLinking, this can be quite useful. |
+| Rotate13        | Use rotate13 encoding on the URL. *                                                                                                                                              |
+| Base64          | Use base64 encoding on the URL. *                                                                                                                                                |
+| Strip Meta      | Strip meta HTML tags                                                                                                                                                             |
+| Strip Title     | Strip Website title                                                                                                                                                              |
+| Session Cookies | Store cookies for this current session only           
+_____________________________________________________________________
 
 * only one type of encoding will be used even if both are selected
 
