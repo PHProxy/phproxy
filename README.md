@@ -8,19 +8,17 @@ You may use github functionality for bug reports or my mail phproxy@miglen.com a
 Here are the original bug report contacts: phproxy.support@gmail.com
 
 # Table of Contents
----
-
-	1. License
-	2. What is PHProxy?
-	3. How it Works
-	4. Requirements
-	5. Installation
-	6. Configurable Script Variables
-	7. Available Options
-	8. Disclaimer
-	9. Bugs and Limitations
-	10. ChangeLog, FAQ, TODO, LICENSE, Bugs, Limitations
-	11. Credits
+ 1. License
+ 2. What is PHProxy?
+ 3. How it Works
+ 4. Requirements
+ 5. Installation
+ 6. Configurable Script Variables
+ 7. Available Options
+ 8. Disclaimer
+ 9. Bugs and Limitations
+ 10. ChangeLog, FAQ, TODO, LICENSE, Bugs, Limitations
+ 11. Credits
 
 
 # 1. License
