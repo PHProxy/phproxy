@@ -1,4 +1,5 @@
 # List of to-do 
+
  * Cookie managment
  * JavaScript support
  * Support for external proxies
@@ -16,6 +17,6 @@
  * Support for multiple languages
  * IDN support
  * FTP support
- 
- 
+ * Modernize the interface with responsive/mobile design and compact settings.
+ * Basic authentication support
  
