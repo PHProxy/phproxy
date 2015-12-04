@@ -8,7 +8,7 @@ You may use github functionality for bug reports or my mail phproxy@miglen.com a
 Here are the original bug report contacts: phproxy.support@gmail.com
 
 # Table of Contents
- 1. (License)[#1-license]
+ 1. [License](#1-license)
  2. What is PHProxy?
  3. How it Works
  4. Requirements
