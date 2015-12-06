@@ -4,10 +4,11 @@ Originaly developed in [SourceForge](http://www.sourceforge.net/projects/poxy/) 
 This project needs to live, this is why I  have copied it here and will continue to develop it.
 
 # Support & bug reports
-You may use github functionality for bug reports or my mail phproxy@miglen.com and I'll try to fix them.
-Here are the original bug report contacts: phproxy.support@gmail.com
+Use the Github functionality for reporting issues or proposing any features here: https://github.com/PHProxy/PHProxy/issues/new
+Feel free to fork, distribute and contribute under the license.
 
 # Table of Contents
+_____________________________________________________________________
  1. [License](#1-license)
  2. What is PHProxy?
  3. How it Works
@@ -22,11 +23,10 @@ Here are the original bug report contacts: phproxy.support@gmail.com
 
 
 # 1. License
----
+_____________________________________________________________________
 
 This source code is released under the GPL.
-A copy of the license in provided in this package in the file
- named LICENSE.txt
+A copy of the license in provided in this package in the file named LICENSE.txt
 
 
 # 2. What is PHProxy?
