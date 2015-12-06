@@ -1,6 +1,6 @@
 # PHProxy - Web based PHP Proxy
 
-Originaly developed by Abdullah Arif in [SourceForge](http://www.sourceforge.net/projects/poxy/) during 2002-2007 and then abandoned.
+Originaly developed in [SourceForge](http://www.sourceforge.net/projects/poxy/) during 2002-2007 and then abandoned.
 This project needs to live, this is why I  have copied it here and will continue to develop it.
 
 # Support & bug reports
