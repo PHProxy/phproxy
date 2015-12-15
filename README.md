@@ -32,20 +32,11 @@ Simply copy the files of the repository in your public web server folder.
 
 ```
 cd /var/www/html/
-git clone git@github.com:PHProxy/phproxy.git .
+git clone https://github.com/PHProxy/phproxy.git .
 ```
 
-## Bugs and Limitations
+## Disclaimer & Limitations
 
-PHP is retarded by nature, and as such, some problems arise that 
-would have not if this script were otherwise coded in another programming
-language. The first example of this is dots in incoming variable names 
-from POST and GET. In a normal programming language, this wouldn't be
-a problem as these variables could be accessed normally as they are 
-supplied, with dots included. In PHP, however, dots in GET, POST, and
-COOKIE variable names are magically transformed into underscores 
-because of the stupid shit that is register_globals.
+PHP is not the most convenient, fast and secure language to write a web proxy, but this is the only open-source php based proxy and it needs to live for the masses. Just as an example in the U.S. national vulnerability database (nvd.nist.gov) to the current moment there are 70k vulnerabilities and 22k or 1/3 are related to php.
 
-## Disclaimer
-
-Basically use at your own risk.
+So basically use at your own risk.
