@@ -32,7 +32,7 @@ Simply copy the files of the repository in your public web server folder.
 
 ```
 cd /var/www/html/
-git clone git@github.com:PHProxy/phproxy.git
+git clone git@github.com:PHProxy/phproxy.git .
 ```
 
 ## Bugs and Limitations
