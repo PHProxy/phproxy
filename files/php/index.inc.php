@@ -13,7 +13,7 @@ echo '<?xml version="1.0" encoding="utf-8"?>';
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en-US" xml:lang="en-US">
 <head>
   <title>PHProxy</title>
-  <link rel="stylesheet" type="text/css" href="style.css" title="Default Theme" media="all" />
+  <link rel="stylesheet" type="text/css" href="./files/css/style.css" title="Default Theme" media="all" />
 </head>
 <body onload="document.getElementById('address_box').focus()">
 <div id="container">
@@ -99,9 +99,7 @@ switch ($data['category'])
       ?>
     </ul>
   </form>
-  <!-- The least you could do is leave this link back as it is. This software is provided for free and I ask nothing in return except that you leave this link intact
-       You're more likely to recieve support should you require some if I see a link back in your installation than if not -->
-  <div id="footer"><a href="http://whitefyre.com/poxy/">PHProxy</a> <?php echo $GLOBALS['_version'] ?></div>
+  <div id="footer"><a href="https://phproxy.github.io">PHProxy</a></div>
 </div>
 </body>
 </html>

@@ -1,26 +1,19 @@
 <?php
 
-/*
-   +-----------------+------------------------------------------------------------+
-   |  Script         | PHProxy                                                    |
-   |  Author         | Abdullah Arif                                              |
-   |  Last Modified  | 5:27 PM 1/20/2007                                          |
-   +-----------------+------------------------------------------------------------+
-   |  This program is free software; you can redistribute it and/or               |
-   |  modify it under the terms of the GNU General Public License                 |
-   |  as published by the Free Software Foundation; either version 2              |
-   |  of the License, or (at your option) any later version.                      |
-   |                                                                              |
-   |  This program is distributed in the hope that it will be useful,             |
-   |  but WITHOUT ANY WARRANTY; without even the implied warranty of              |
-   |  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the               |
-   |  GNU General Public License for more details.                                |
-   |                                                                              |
-   |  You should have received a copy of the GNU General Public License           |
-   |  along with this program; if not, write to the Free Software                 |
-   |  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA. |
-   +------------------------------------------------------------------------------+
-*/
+/**
+ *
+ * PHProxy
+ *
+ * @author		Miglen 
+ * @copyright	2002-2007 A.A. (whitefyre)
+ * @description Web based http proxy written on php. 
+ * @url	 		https://phproxy.github.io
+ * @license		GNU GPL v3
+ * @repo       	https://github.com/phproxy/phproxy
+ * @docs		http://phproxy.readthedocs.org
+ * 
+ */
+
 
 error_reporting(E_ALL);
 
@@ -132,7 +125,7 @@ $_response_body     = '';
 
 function show_report($data)
 {    
-    include $data['which'] . '.inc.php';
+	require_once("./files/php/index.inc.php");
     exit(0);
 }
 
@@ -437,10 +430,6 @@ else if (isset($_GET[$_config['url_var_name']]))
 {
     $_url = decode_url($_GET[$_config['url_var_name']]);
 }
-else if (isset($_GET['action']) && $_GET['action'] == 'cookies')
-{
-    show_report(array('which' => 'cookies'));
-}
 else
 {
     show_report(array('which' => 'index', 'category' => 'entry_form'));
@@ -481,6 +470,18 @@ else
 {
     show_report(array('which' => 'index', 'category' => 'error', 'group' => 'url', 'type' => 'external', 'error' => 2));
 }
+
+
+	/*
+	* Check if the hostname is valid otherwise try to convert to idna
+	*/
+	
+	if(preg_match("^(?=.{1,255}$)[0-9A-Za-z](?:(?:[0-9A-Za-z]|-){0,61}[0-9A-Za-z])?(?:\.[0-9A-Za-z](?:(?:[0-9A-Za-z]|-){0,61}[0-9A-Za-z])?)*\.?$",$_url_parts['host']) === false){
+		require_once("./files/php/idna.class.php");
+			$php_idna = new php_idna();
+			$_url_parts['host'] = $php_idna->encode($_url_parts['host']);		
+	}
+
 
 //
 // HOTLINKING PREVENTION
