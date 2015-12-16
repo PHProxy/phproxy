@@ -119,191 +119,9 @@ $_basic_auth_realm  = '';
 $_auth_creds        = array();
 $_response_body     = '';
 
-//
-// FUNCTION DECLARATIONS
-//
 
-function show_report($data)
-{    
-	require_once("./files/php/index.inc.php");
-    exit(0);
-}
-
-function add_cookie($name, $value, $expires = 0)
-{
-    return rawurlencode(rawurlencode($name)) . '=' . rawurlencode(rawurlencode($value)) . (empty($expires) ? '' : '; expires=' . gmdate('D, d-M-Y H:i:s \G\M\T', $expires)) . '; path=/; domain=.' . $GLOBALS['_http_host'];
-}
-
-function set_post_vars($array, $parent_key = null)
-{
-    $temp = array();
-
-    foreach ($array as $key => $value)
-    {
-        $key = isset($parent_key) ? sprintf('%s[%s]', $parent_key, urlencode($key)) : urlencode($key);
-        if (is_array($value))
-        {
-            $temp = array_merge($temp, set_post_vars($value, $key));
-        }
-        else
-        {
-            $temp[$key] = urlencode($value);
-        }
-    }
-    
-    return $temp;
-}
-
-function set_post_files($array, $parent_key = null)
-{
-    $temp = array();
-
-    foreach ($array as $key => $value)
-    {
-        $key = isset($parent_key) ? sprintf('%s[%s]', $parent_key, urlencode($key)) : urlencode($key);
-        if (is_array($value))
-        {
-            $temp = array_merge_recursive($temp, set_post_files($value, $key));
-        }
-        else if (preg_match('#^([^\[\]]+)\[(name|type|tmp_name)\]#', $key, $m))
-        {
-            $temp[str_replace($m[0], $m[1], $key)][$m[2]] = $value;
-        }
-    }
-
-    return $temp;
-}
-
-function url_parse($url, & $container)
-{
-    $temp = @parse_url($url);
-
-    if (!empty($temp))
-    {
-        $temp['port_ext'] = '';
-        $temp['base']     = $temp['scheme'] . '://' . $temp['host'];
-
-        if (isset($temp['port']))
-        {
-            $temp['base'] .= $temp['port_ext'] = ':' . $temp['port'];
-        }
-        else
-        {
-            $temp['port'] = $temp['scheme'] === 'https' ? 443 : 80;
-        }
-        
-        $temp['path'] = isset($temp['path']) ? $temp['path'] : '/';
-        $path         = array();
-        $temp['path'] = explode('/', $temp['path']);
-    
-        foreach ($temp['path'] as $dir)
-        {
-            if ($dir === '..')
-            {
-                array_pop($path);
-            }
-            else if ($dir !== '.')
-            {
-                for ($dir = rawurldecode($dir), $new_dir = '', $i = 0, $count_i = strlen($dir); $i < $count_i; $new_dir .= strspn($dir{$i}, 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789$-_.+!*\'(),?:@&;=') ? $dir{$i} : rawurlencode($dir{$i}), ++$i);
-                $path[] = $new_dir;
-            }
-        }
-
-        $temp['path']     = str_replace('/%7E', '/~', '/' . ltrim(implode('/', $path), '/'));
-        $temp['file']     = substr($temp['path'], strrpos($temp['path'], '/')+1);
-        $temp['dir']      = substr($temp['path'], 0, strrpos($temp['path'], '/'));
-        $temp['base']    .= $temp['dir'];
-        $temp['prev_dir'] = substr_count($temp['path'], '/') > 1 ? substr($temp['base'], 0, strrpos($temp['base'], '/')+1) : $temp['base'] . '/';
-        $container = $temp;
-
-        return true;
-    }
-    
-    return false;
-}
-
-function complete_url($url, $proxify = true)
-{
-    $url = trim($url);
-    
-    if ($url === '')
-    {
-        return '';
-    }
-    
-    $hash_pos = strrpos($url, '#');
-    $fragment = $hash_pos !== false ? '#' . substr($url, $hash_pos) : '';
-    $sep_pos  = strpos($url, '://');
-    
-    if ($sep_pos === false || $sep_pos > 5)
-    {
-        switch ($url{0})
-        {
-            case '/':
-                $url = substr($url, 0, 2) === '//' ? $GLOBALS['_base']['scheme'] . ':' . $url : $GLOBALS['_base']['scheme'] . '://' . $GLOBALS['_base']['host'] . $GLOBALS['_base']['port_ext'] . $url;
-                break;
-            case '?':
-                $url = $GLOBALS['_base']['base'] . '/' . $GLOBALS['_base']['file'] . $url;
-                break;
-            case '#':
-                $proxify = false;
-                break;
-            case 'm':
-                if (substr($url, 0, 7) == 'mailto:')
-                {
-                    $proxify = false;
-                    break;
-                }
-            default:
-                $url = $GLOBALS['_base']['base'] . '/' . $url;
-        }
-    }
-
-    return $proxify ? "{$GLOBALS['_script_url']}?{$GLOBALS['_config']['url_var_name']}=" . encode_url($url) . $fragment : $url;
-}
-
-function proxify_inline_css($css)
-{
-    preg_match_all('#url\s*\(\s*(([^)]*(\\\))*[^)]*)(\)|$)?#i', $css, $matches, PREG_SET_ORDER);
-
-    for ($i = 0, $count = count($matches); $i < $count; ++$i)
-    {
-        $css = str_replace($matches[$i][0], 'url(' . proxify_css_url($matches[$i][1]) . ')', $css);
-    }
-    
-    return $css;
-}
-
-function proxify_css($css)
-{
-    $css = proxify_inline_css($css);
-
-    preg_match_all("#@import\s*(?:\"([^\">]*)\"?|'([^'>]*)'?)([^;]*)(;|$)#i", $css, $matches, PREG_SET_ORDER);
-
-    for ($i = 0, $count = count($matches); $i < $count; ++$i)
-    {
-        $delim = '"';
-        $url   = $matches[$i][2];
-
-        if (isset($matches[$i][3]))
-        {
-            $delim = "'";
-            $url = $matches[$i][3];
-        }
-
-        $css = str_replace($matches[$i][0], '@import ' . $delim . proxify_css_url($matches[$i][1]) . $delim . (isset($matches[$i][4]) ? $matches[$i][4] : ''), $css);
-    }
-
-    return $css;
-}
-
-function proxify_css_url($url)
-{
-    $url   = trim($url);
-    $delim = strpos($url, '"') === 0 ? '"' : (strpos($url, "'") === 0 ? "'" : '');
-
-    return $delim . preg_replace('#([\(\),\s\'"\\\])#', '\\$1', complete_url(trim(preg_replace('#\\\(.)#', '$1', trim($url, $delim))))) . $delim;
-}
+// Functions declaration
+require_once("./files/php/functions.inc.php");
 
 //
 // SET FLAGS
@@ -314,6 +132,7 @@ if (isset($_POST[$_config['url_var_name']]) && !isset($_GET[$_config['url_var_na
     foreach ($_flags as $flag_name => $flag_value)
     {
         $_iflags .= isset($_POST[$_config['flags_var_name']][$flag_name]) ? (string)(int)(bool)$_POST[$_config['flags_var_name']][$flag_name] : ($_frozen_flags[$flag_name] ? $flag_value : '0');
+		
     }
     
     $_iflags = base_convert(($_iflags != '' ? $_iflags : '0'), 2, 16);
@@ -337,44 +156,6 @@ if ($_iflags !== '')
     {
         $_flags[$flag_name] = $_frozen_flags[$flag_name] ? $flag_value : (int)(bool)$_iflags{$i};
         $i++;
-    }
-}
-
-//
-// DETERMINE URL-ENCODING BASED ON FLAGS
-//
-
-if ($_flags['rotate13'])
-{
-    function encode_url($url)
-    {
-        return rawurlencode(str_rot13($url));
-    }
-    function decode_url($url)
-    {
-        return str_replace(array('&amp;', '&#38;'), '&', str_rot13(rawurldecode($url)));
-    }
-}
-else if ($_flags['base64_encode'])
-{
-    function encode_url($url)
-    {
-        return rawurlencode(base64_encode($url));
-    }
-    function decode_url($url)
-    {
-        return str_replace(array('&amp;', '&#38;'), '&', base64_decode(rawurldecode($url)));
-    }
-}
-else
-{
-    function encode_url($url)
-    {
-        return rawurlencode($url);
-    }
-    function decode_url($url)
-    {
-        return str_replace(array('&amp;', '&#38;'), '&', rawurldecode($url));
     }
 }
 
@@ -475,13 +256,16 @@ else
 	/*
 	* Check if the hostname is valid otherwise try to convert to idna
 	*/
-	
-	if(preg_match("^(?=.{1,255}$)[0-9A-Za-z](?:(?:[0-9A-Za-z]|-){0,61}[0-9A-Za-z])?(?:\.[0-9A-Za-z](?:(?:[0-9A-Za-z]|-){0,61}[0-9A-Za-z])?)*\.?$",$_url_parts['host']) === false){
-		require_once("./files/php/idna.class.php");
+	$chars = str_split($_url_parts['host']);
+	foreach($chars as $char){
+		if(ord($char)>122){
+			require_once("./files/php/idna.class.php");
 			$php_idna = new php_idna();
-			$_url_parts['host'] = $php_idna->encode($_url_parts['host']);		
+			$_url_parts['host'] = $php_idna->encode($_url_parts['host']);
+			break;
+		}
 	}
-
+		
 
 //
 // HOTLINKING PREVENTION
