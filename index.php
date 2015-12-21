@@ -934,9 +934,9 @@ else
                         . '<input id="____' . $_config['url_var_name'] . '" class="form-control" type="text" size="80" name="' . $_config['url_var_name'] . '" value="' . $_url . '" />'
                         . '<span class="input-group-btn">'
                         . '<button class="btn btn-default" type="submit" name="go" >Go</button>'
-                        . '<button class="btn btn-default" ><a href="' . $_url . '" target="_blank" >direct</a></button>'
-                        . '<button class="btn btn-default" ><a href="' . $_script_url . '?' . $_config['url_var_name'] . '=' . encode_url($_url_parts['prev_dir']) .' "><span class="glyphicon glyphicon-arrow-up" alt="Up one directory"></span></a></button>'
-                        . '<button class="btn btn-default"><a href="' . $_script_base . '" ><span class="glyphicon glyphicon-home" alt="Up one directory"></span></a></button>'
+                        . '<a class="btn btn-default" href="' . $_url . '" target="_blank" >direct</a>'
+                        . '<a class="btn btn-default" href="' . $_script_url . '?' . $_config['url_var_name'] . '=' . encode_url($_url_parts['prev_dir']) .' "><span class="glyphicon glyphicon-arrow-up" alt="Up one directory"></span></a>'
+                        . '<a class="btn btn-default" href="' . $_script_base . '" ><span class="glyphicon glyphicon-home" ></span></a>'
                         . '</span></div><!-- input-group -->'
                         . '</div><!-- end row -->'
                         . '<div class="row p-options">';
