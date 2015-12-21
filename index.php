@@ -4,14 +4,14 @@
  *
  * PHProxy
  *
- * @author		Miglen 
+ * @author		Miglen
  * @copyright	2002-2007 A.A. (whitefyre)
- * @description Web based http proxy written on php. 
+ * @description Web based http proxy written on php.
  * @url	 		https://phproxy.github.io
  * @license		GNU GPL v3
  * @repo       	https://github.com/phproxy/phproxy
  * @docs		http://phproxy.readthedocs.org
- * 
+ *
  */
 
 
@@ -34,7 +34,7 @@ $_config            = array
                     );
 $_flags             = array
                     (
-                        'include_form'    => 1, 
+                        'include_form'    => 1,
                         'remove_scripts'  => 1,
                         'accept_cookies'  => 1,
                         'show_images'     => 1,
@@ -47,7 +47,7 @@ $_flags             = array
                     );
 $_frozen_flags      = array
                     (
-                        'include_form'    => 0, 
+                        'include_form'    => 0,
                         'remove_scripts'  => 0,
                         'accept_cookies'  => 0,
                         'show_images'     => 0,
@@ -57,21 +57,21 @@ $_frozen_flags      = array
                         'strip_meta'      => 0,
                         'strip_title'     => 0,
                         'session_cookies' => 0
-                    );                    
+                    );
 $_labels            = array
                     (
-                        'include_form'    => array('Include Form', 'Include mini URL-form on every page'), 
-                        'remove_scripts'  => array('Remove Scripts', 'Remove client-side scripting (i.e JavaScript)'), 
-                        'accept_cookies'  => array('Accept Cookies', 'Allow cookies to be stored'), 
-                        'show_images'     => array('Show Images', 'Show images on browsed pages'), 
-                        'show_referer'    => array('Show Referer', 'Show actual referring Website'), 
-                        'rotate13'        => array('Rotate13', 'Use ROT13 encoding on the address'), 
-                        'base64_encode'   => array('Base64', 'Use base64 encodng on the address'), 
-                        'strip_meta'      => array('Strip Meta', 'Strip meta information tags from pages'), 
-                        'strip_title'     => array('Strip Title', 'Strip page title'), 
-                        'session_cookies' => array('Session Cookies', 'Store cookies for this session only') 
+                        'include_form'    => array('Include Form', 'Include mini URL-form on every page'),
+                        'remove_scripts'  => array('Remove Scripts', 'Remove client-side scripting (i.e JavaScript)'),
+                        'accept_cookies'  => array('Accept Cookies', 'Allow cookies to be stored'),
+                        'show_images'     => array('Show Images', 'Show images on browsed pages'),
+                        'show_referer'    => array('Show Referer', 'Show actual referring Website'),
+                        'rotate13'        => array('Rotate13', 'Use ROT13 encoding on the address'),
+                        'base64_encode'   => array('Base64', 'Use base64 encodng on the address'),
+                        'strip_meta'      => array('Strip Meta', 'Strip meta information tags from pages'),
+                        'strip_title'     => array('Strip Title', 'Strip page title'),
+                        'session_cookies' => array('Session Cookies', 'Store cookies for this session only')
                     );
-                    
+
 $_hosts             = array
                     (
                         '#^127\.|192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|localhost#i'
@@ -105,7 +105,7 @@ $_request_headers   = '';
 $_cookie            = '';
 $_post_body         = '';
 $_response_headers  = array();
-$_response_keys     = array();  
+$_response_keys     = array();
 $_http_version      = '';
 $_response_code     = 0;
 $_content_type      = 'text/html';
@@ -128,13 +128,13 @@ require_once("./files/php/functions.inc.php");
 //
 
 if (isset($_POST[$_config['url_var_name']]) && !isset($_GET[$_config['url_var_name']]) && isset($_POST[$_config['flags_var_name']]))
-{    
+{
     foreach ($_flags as $flag_name => $flag_value)
     {
         $_iflags .= isset($_POST[$_config['flags_var_name']][$flag_name]) ? (string)(int)(bool)$_POST[$_config['flags_var_name']][$flag_name] : ($_frozen_flags[$flag_name] ? $flag_value : '0');
-		
+
     }
-    
+
     $_iflags = base_convert(($_iflags != '' ? $_iflags : '0'), 2, 16);
 }
 else if (isset($_GET[$_config['flags_var_name']]) && !isset($_GET[$_config['get_form_name']]) && ctype_alnum($_GET[$_config['flags_var_name']]))
@@ -178,7 +178,7 @@ if ($_system['stripslashes'])
     {
         return is_array($value) ? array_map('_stripslashes', $value) : (is_string($value) ? stripslashes($value) : $value);
     }
-    
+
     $_GET    = _stripslashes($_GET);
     $_POST   = _stripslashes($_POST);
     $_COOKIE = _stripslashes($_COOKIE);
@@ -189,7 +189,7 @@ if ($_system['stripslashes'])
 //
 
 if (isset($_POST[$_config['url_var_name']]) && !isset($_GET[$_config['url_var_name']]))
-{   
+{
     header('Location: ' . $_script_url . '?' . $_config['url_var_name'] . '=' . encode_url($_POST[$_config['url_var_name']]) . '&' . $_config['flags_var_name'] . '=' . base_convert($_iflags, 2, 16));
     exit(0);
 }
@@ -199,12 +199,12 @@ if (isset($_GET[$_config['get_form_name']]))
     $_url  = decode_url($_GET[$_config['get_form_name']]);
     $qstr = strpos($_url, '?') !== false ? (strpos($_url, '?') === strlen($_url)-1 ? '' : '&') : '?';
     $arr  = explode('&', $_SERVER['QUERY_STRING']);
-    
+
     if (preg_match('#^\Q' . $_config['get_form_name'] . '\E#', $arr[0]))
     {
         array_shift($arr);
     }
-    
+
     $_url .= $qstr . implode('&', $arr);
 }
 else if (isset($_GET[$_config['url_var_name']]))
@@ -235,7 +235,7 @@ if (strpos($_url, '://') === false)
 if (url_parse($_url, $_url_parts))
 {
     $_base = $_url_parts;
-    
+
     if (!empty($_hosts))
     {
         foreach ($_hosts as $host)
@@ -265,7 +265,7 @@ else
 			break;
 		}
 	}
-		
+
 
 //
 // HOTLINKING PREVENTION
@@ -275,7 +275,7 @@ if (!$_config['allow_hotlinking'] && isset($_SERVER['HTTP_REFERER']))
 {
     $_hotlink_domains[] = $_http_host;
     $is_hotlinking      = true;
-    
+
     foreach ($_hotlink_domains as $host)
     {
         if (preg_match('#^https?\:\/\/(www)?\Q' . $host  . '\E(\/|\:|$)#i', trim($_SERVER['HTTP_REFERER'])))
@@ -284,7 +284,7 @@ if (!$_config['allow_hotlinking'] && isset($_SERVER['HTTP_REFERER']))
             break;
         }
     }
-    
+
     if ($is_hotlinking)
     {
         switch ($_config['upon_hotlink'])
@@ -301,7 +301,7 @@ if (!$_config['allow_hotlinking'] && isset($_SERVER['HTTP_REFERER']))
         }
     }
 }
- 
+
 //
 // OPEN SOCKET TO SERVER
 //
@@ -352,12 +352,12 @@ do
     {
         $_cookie  = '';
         $_auth_creds    = array();
-    
+
         foreach ($_COOKIE as $cookie_id => $cookie_content)
         {
             $cookie_id      = explode(';', rawurldecode($cookie_id));
             $cookie_content = explode(';', rawurldecode($cookie_content));
-    
+
             if ($cookie_id[0] === 'COOKIE')
             {
                 $cookie_id[3] = str_replace('_', '.', $cookie_id[3]); //stupid PHP can't have dots in var names
@@ -366,7 +366,7 @@ do
                 {
                     continue;
                 }
-    
+
                 if ((preg_match('#\Q' . $cookie_id[3] . '\E$#i', $_url_parts['host']) || strtolower($cookie_id[3]) == strtolower('.' . $_url_parts['host'])) && preg_match('#^\Q' . $cookie_id[2] . '\E#', $_url_parts['path']))
                 {
                     $_cookie .= ($_cookie != '' ? '; ' : '') . (empty($cookie_id[1]) ? '' : $cookie_id[1] . '=') . $cookie_content[0];
@@ -382,7 +382,7 @@ do
                 }
             }
         }
-        
+
         if ($_cookie != '')
         {
             $_request_headers .= "Cookie: $_cookie\r\n";
@@ -406,37 +406,37 @@ do
         $_request_headers .= "Authorization: Basic {$_basic_auth_header}\r\n";
     }
     if ($_request_method == 'POST')
-    {   
+    {
         if (!empty($_FILES) && $_system['uploads'])
         {
             $_data_boundary = '----' . md5(uniqid(rand(), true));
             $array = set_post_vars($_POST);
-    
+
             foreach ($array as $key => $value)
             {
                 $_post_body .= "--{$_data_boundary}\r\n";
                 $_post_body .= "Content-Disposition: form-data; name=\"$key\"\r\n\r\n";
                 $_post_body .= urldecode($value) . "\r\n";
             }
-            
+
             $array = set_post_files($_FILES);
-    
+
             foreach ($array as $key => $file_info)
             {
                 $_post_body .= "--{$_data_boundary}\r\n";
                 $_post_body .= "Content-Disposition: form-data; name=\"$key\"; filename=\"{$file_info['name']}\"\r\n";
                 $_post_body .= 'Content-Type: ' . (empty($file_info['type']) ? 'application/octet-stream' : $file_info['type']) . "\r\n\r\n";
-    
+
                 if (is_readable($file_info['tmp_name']))
                 {
                     $handle = fopen($file_info['tmp_name'], 'rb');
                     $_post_body .= fread($handle, filesize($file_info['tmp_name']));
                     fclose($handle);
                 }
-                
+
                 $_post_body .= "\r\n";
             }
-            
+
             $_post_body       .= "--{$_data_boundary}--\r\n";
             $_request_headers .= "Content-Type: multipart/form-data; boundary={$_data_boundary}\r\n";
             $_request_headers .= "Content-Length: " . strlen($_post_body) . "\r\n\r\n";
@@ -445,7 +445,7 @@ do
         else
         {
             $array = set_post_vars($_POST);
-            
+
             foreach ($array as $key => $value)
             {
                 $_post_body .= !empty($_post_body) ? '&' : '';
@@ -456,7 +456,7 @@ do
             $_request_headers .= $_post_body;
             $_request_headers .= "\r\n";
         }
-        
+
         $_post_body = '';
     }
     else
@@ -465,15 +465,15 @@ do
     }
 
     fwrite($_socket, $_request_headers);
-    
+
     //
     // PROCESS RESPONSE HEADERS
     //
-    
+
     $_response_headers = $_response_keys = array();
-    
+
     $line = fgets($_socket, 8192);
-    
+
     while (strspn($line, "\r\n") !== strlen($line))
     {
         @list($name, $value) = explode(':', $line, 2);
@@ -482,9 +482,9 @@ do
         $_response_keys[strtolower($name)] = $name;
         $line = fgets($_socket, 8192);
     }
-    
+
     sscanf(current($_response_keys), '%s %s', $_http_version, $_response_code);
-    
+
     if (isset($_response_headers['content-type']))
     {
         list($_content_type, ) = explode(';', str_replace(' ', '', strtolower($_response_headers['content-type'][0])), 2);
@@ -510,11 +510,11 @@ do
             preg_match('#;\s*path\s*=\s*([^;,\s]*)#i',      $cookie, $match) && list(, $path)         = $match;
             preg_match('#;\s*domain\s*=\s*([^;,\s]*)#i',    $cookie, $match) && list(, $domain)       = $match;
             preg_match('#;\s*(secure\b)#i',                 $cookie, $match) && list(, $secure)       = $match;
-    
+
             $expires_time = empty($expires) ? 0 : intval(@strtotime($expires));
             $expires = ($_flags['session_cookies'] && !empty($expires) && time()-$expires_time < 0) ? '' : $expires;
             $path    = empty($path)   ? '/' : $path;
-                
+
             if (empty($domain))
             {
                 $domain = $_url_parts['host'];
@@ -522,7 +522,7 @@ do
             else
             {
                 $domain = '.' . strtolower(str_replace('..', '.', trim($domain, '.')));
-    
+
                 if ((!preg_match('#\Q' . $domain . '\E$#i', $_url_parts['host']) && $domain != '.' . $_url_parts['host']) || (substr_count($domain, '.') < 2 && $domain{0} == '.'))
                 {
                     continue;
@@ -532,7 +532,7 @@ do
             {
                 $_set_cookie[] = add_cookie(current($_COOKIE), '', 1);
             }
-            
+
             $_set_cookie[] = add_cookie("COOKIE;$name;$path;$domain", "$value;$secure", $expires_time);
         }
     }
@@ -554,15 +554,15 @@ do
         $_response_headers['refresh'][0] = $matches[1] . complete_url($matches[2]);
     }
     if (isset($_response_headers['location']))
-    {   
+    {
         $_response_headers['location'][0] = complete_url($_response_headers['location'][0]);
     }
     if (isset($_response_headers['uri']))
-    {   
+    {
         $_response_headers['uri'][0] = complete_url($_response_headers['uri'][0]);
     }
     if (isset($_response_headers['content-location']))
-    {   
+    {
         $_response_headers['content-location'][0] = complete_url($_response_headers['content-location'][0]);
     }
     if (isset($_response_headers['connection']))
@@ -591,32 +591,32 @@ while ($_retry);
 
 //
 // OUTPUT RESPONSE IF NO PROXIFICATION IS NEEDED
-//  
+//
 
 if (!isset($_proxify[$_content_type]))
 {
     @set_time_limit(0);
-   
+
     $_response_keys['content-disposition'] = 'Content-Disposition';
     $_response_headers['content-disposition'][0] = empty($_content_disp) ? ($_content_type == 'application/octet_stream' ? 'attachment' : 'inline') . '; filename="' . $_url_parts['file'] . '"' : $_content_disp;
-    
+
     if ($_content_length !== false)
     {
         if ($_config['max_file_size'] != -1 && $_content_length > $_config['max_file_size'])
         {
             show_report(array('which' => 'index', 'category' => 'error', 'group' => 'resource', 'type' => 'file_size'));
         }
-        
+
         $_response_keys['content-length'] = 'Content-Length';
         $_response_headers['content-length'][0] = $_content_length;
     }
-    
+
     $_response_headers   = array_filter($_response_headers);
     $_response_keys      = array_filter($_response_keys);
-    
+
     header(array_shift($_response_keys));
     array_shift($_response_headers);
-    
+
     foreach ($_response_headers as $name => $array)
     {
         foreach ($array as $value)
@@ -624,14 +624,14 @@ if (!isset($_proxify[$_content_type]))
             header($_response_keys[$name] . ': ' . $value, false);
         }
     }
-        
+
     do
     {
         $data = fread($_socket, 8192);
         echo $data;
     }
     while (isset($data{0}));
-        
+
     fclose($_socket);
     exit(0);
 }
@@ -640,9 +640,9 @@ do
 {
     $data = @fread($_socket, 8192); // silenced to avoid the "normal" warning by a faulty SSL connection
     $_response_body .= $data;
-}   
+}
 while (isset($data{0}));
-   
+
 unset($data);
 fclose($_socket);
 
@@ -670,11 +670,11 @@ else
     {
         $_response_body = preg_replace('#<(img|image)[^>]*?>#si', '', $_response_body);
     }
-    
+
     //
     // PROXIFY HTML RESOURCE
     //
-    
+
     $tags = array
     (
         'a'          => array('href'),
@@ -729,19 +729,19 @@ else
         {
             continue;
         }
-        
+
         $rebuild    = false;
         $extra_html = $temp = '';
         $attrs      = array();
 
         for ($j = 0, $count_j = count($m); $j < $count_j; $attrs[strtolower($m[$j][1])] = (isset($m[$j][4]) ? $m[$j][4] : (isset($m[$j][3]) ? $m[$j][3] : (isset($m[$j][2]) ? $m[$j][2] : false))), ++$j);
-        
+
         if (isset($attrs['style']))
         {
             $rebuild = true;
             $attrs['style'] = proxify_inline_css($attrs['style']);
         }
-        
+
         $tag = strtolower($matches[1][$i]);
 
         if (isset($tags[$tag]))
@@ -771,7 +771,7 @@ else
                     if (isset($attrs['action']))
                     {
                         $rebuild = true;
-                        
+
                         if (trim($attrs['action']) === '')
                         {
                             $attrs['action'] = $_url_parts['path'];
@@ -782,14 +782,14 @@ else
                             $attrs['action'] = '';
                             break;
                         }
-                        
+
                         $attrs['action'] = complete_url($attrs['action']);
                     }
                     break;
                 case 'base':
                     if (isset($attrs['href']))
                     {
-                        $rebuild = true;  
+                        $rebuild = true;
                         url_parse($attrs['href'], $_base);
                         $attrs['href'] = complete_url($attrs['href']);
                     }
@@ -802,7 +802,7 @@ else
                     if (isset($attrs['http-equiv'], $attrs['content']) && preg_match('#\s*refresh\s*#i', $attrs['http-equiv']))
                     {
                         if (preg_match('#^(\s*[0-9]*\s*;\s*url=)(.*)#i', $attrs['content'], $content))
-                        {                 
+                        {
                             $rebuild = true;
                             $attrs['content'] =  $content[1] . complete_url(trim($content[2], '"\''));
                         }
@@ -908,7 +908,7 @@ else
                     break;
             }
         }
-    
+
         if ($rebuild)
         {
             $new_tag = "<$tag";
@@ -921,15 +921,25 @@ else
             $_response_body = str_replace($matches[0][$i], $new_tag . '>' . $extra_html, $_response_body);
         }
     }
-    
+
     if ($_flags['include_form'] && !isset($_GET['nf']))
     {
-        $_url_form      = '<div style="width:100%;margin:0;text-align:center;border-bottom:1px solid #725554;color:#000000;background-color:#F2FDF3;font-size:12px;font-weight:bold;font-family:Bitstream Vera Sans,arial,sans-serif;padding:4px;">'
-                        . '<form method="post" action="' . $_script_url . '">'
-                        . ' <label for="____' . $_config['url_var_name'] . '"><a href="' . $_url . '">Address</a>:</label> <input id="____' . $_config['url_var_name'] . '" type="text" size="80" name="' . $_config['url_var_name'] . '" value="' . $_url . '" />'
-                        . ' <input type="submit" name="go" value="Go" />'
-                        . ' [go: <a href="' . $_script_url . '?' . $_config['url_var_name'] . '=' . encode_url($_url_parts['prev_dir']) .' ">up one dir</a>, <a href="' . $_script_base . '">main page</a>]'
-                        . '<br /><hr />';
+        $_url_form      = '<link rel="stylesheet" type="text/css" href="./files/bootstrap/css/bootstrap.min.css" media="all" />'
+                        . '<link rel="stylesheet" type="text/css" href="./files/css/nav.css" media="all" />'
+                        . '<section id="console"><div class="container"><nav class="navbar navbar-default navbar-fixed-bottom"><div class="container text-center">'
+                        . '<form class="form-inline" method="post" action="' . $_script_url . '">'
+                        . '<div class="row url-top">'
+                        . '<label class="address_name" for="____' . $_config['url_var_name'] . '"></label>'
+                        . '<div class="input-group input-group-lg">'
+                        . '<input id="____' . $_config['url_var_name'] . '" class="form-control" type="text" size="80" name="' . $_config['url_var_name'] . '" value="' . $_url . '" />'
+                        . '<span class="input-group-btn">'
+                        . '<button class="btn btn-default" type="submit" name="go" >Go</button>'
+                        . '<button class="btn btn-default" ><a href="' . $_url . '" target="_blank" >direct</a></button>'
+                        . '<button class="btn btn-default" ><a href="' . $_script_url . '?' . $_config['url_var_name'] . '=' . encode_url($_url_parts['prev_dir']) .' "><span class="glyphicon glyphicon-arrow-up" alt="Up one directory"></span></a></button>'
+                        . '<button class="btn btn-default"><a href="' . $_script_base . '" ><span class="glyphicon glyphicon-home" alt="Up one directory"></span></a></button>'
+                        . '</span></div><!-- input-group -->'
+                        . '</div><!-- end row -->'
+                        . '<div class="row p-options">';
 
         foreach ($_flags as $flag_name => $flag_value)
         {
@@ -939,7 +949,7 @@ else
             }
         }
 
-        $_url_form .= '</form></div>';
+        $_url_form .= '</div></form></div></nav></div></section>';
         $_response_body = preg_replace('#\<\s*body(.*?)\>#si', "$0\n$_url_form" , $_response_body, 1);
     }
 }
@@ -947,7 +957,7 @@ else
 $_response_keys['content-disposition'] = 'Content-Disposition';
 $_response_headers['content-disposition'][0] = empty($_content_disp) ? ($_content_type == 'application/octet_stream' ? 'attachment' : 'inline') . '; filename="' . $_url_parts['file'] . '"' : $_content_disp;
 $_response_keys['content-length'] = 'Content-Length';
-$_response_headers['content-length'][0] = strlen($_response_body);    
+$_response_headers['content-length'][0] = strlen($_response_body);
 $_response_headers   = array_filter($_response_headers);
 $_response_keys      = array_filter($_response_keys);
 
