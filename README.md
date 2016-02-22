@@ -4,6 +4,12 @@ PHProxy is a web HTTP proxy written in php. It is designed to bypass proxy restr
 
 Originaly developed in [SourceForge](http://www.sourceforge.net/projects/poxy/) during 2002-2007 and then abandoned. This project needs to live, this is why I  have copied it here and will continue to develop it.
 
+## Demo
+
+http://phproxy.miglen.com
+
+The demo is executed with latest version of this repository & PHP 7.
+
 ## Support
 
 Use the Github functionality here: https://github.com/PHProxy/PHProxy/issues/new
