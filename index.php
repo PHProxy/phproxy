@@ -937,12 +937,22 @@ else
 
     if ($_flags['include_form'] && !isset($_GET['nf']))
     {
-        $_url_form      = '<div style="width:100%;margin:0;text-align:center;border-bottom:1px solid #725554;color:#000000;background-color:#F2FDF3;font-size:12px;font-weight:bold;font-family:Bitstream Vera Sans,arial,sans-serif;padding:4px;">'
-                        . '<form method="post" action="' . $_script_url . '">'
-                        . ' <label for="____' . $_config['url_var_name'] . '"><a href="' . $_url . '">Address</a>:</label> <input id="____' . $_config['url_var_name'] . '" type="text" size="80" name="' . $_config['url_var_name'] . '" value="' . $_url . '" />'
-                        . ' <input type="submit" name="go" value="Go" />'
-                        . ' [go: <a href="' . $_script_url . '?' . $_config['url_var_name'] . '=' . encode_url($_url_parts['prev_dir']) .' ">up one dir</a>, <a href="' . $_script_base . '">main page</a>]'
-                        . '<br /><hr />';
+        $_url_form      = '<link rel="stylesheet" type="text/css" href="./files/bootstrap/css/bootstrap.min.css" media="all" />'
+                        . '<link rel="stylesheet" type="text/css" href="./files/css/nav.css" media="all" />'
+                        . '<section id="console"><div class="container"><nav class="navbar navbar-default navbar-fixed-bottom"><div class="container text-center">'
+                        . '<form class="form-inline" method="post" action="' . $_script_url . '">'
+                        . '<div class="row url-top">'
+                        . '<label class="address_name" for="____' . $_config['url_var_name'] . '"></label>'
+                        . '<div class="input-group input-group-lg">'
+                        . '<input id="____' . $_config['url_var_name'] . '" class="form-control" type="text" size="80" name="' . $_config['url_var_name'] . '" value="' . $_url . '" />'
+                        . '<span class="input-group-btn">'
+                        . '<button class="btn btn-default" type="submit" name="go" >Go</button>'
+                        . '<a class="btn btn-default" href="' . $_url . '" target="_blank" >direct</a>'
+                        . '<a class="btn btn-default" href="' . $_script_url . '?' . $_config['url_var_name'] . '=' . encode_url($_url_parts['prev_dir']) .' "><span class="glyphicon glyphicon-arrow-up" alt="Up one directory"></span></a>'
+                        . '<a class="btn btn-default" href="' . $_script_base . '" ><span class="glyphicon glyphicon-home" ></span></a>'
+                        . '</span></div><!-- input-group -->'
+                        . '</div><!-- end row -->'
+                        . '<div class="row p-options">';
 
         foreach ($_flags as $flag_name => $flag_value)
         {
@@ -952,7 +962,7 @@ else
             }
         }
 
-        $_url_form .= '</form></div>';
+        $_url_form .= '</div></form></div></nav></div></section>';
         $_response_body = preg_replace('#\<\s*body(.*?)\>#si', "$0\n$_url_form" , $_response_body, 1);
     }
 }
