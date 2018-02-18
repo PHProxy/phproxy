@@ -15,7 +15,7 @@
  */
 
 
-error_reporting(E_ALL);
+error_reporting(0);
 
 //
 // CONFIGURABLE OPTIONS
@@ -23,10 +23,10 @@ error_reporting(E_ALL);
 
 $_config            = array
                     (
-                        'url_var_name'             => 'q',
-                        'flags_var_name'           => 'hl',
-                        'get_form_name'            => '____pgfa',
-                        'basic_auth_var_name'      => '____pbavn',
+                        'url_var_name'             => '_url',
+                        'flags_var_name'           => '_fl',
+                        'get_form_name'            => '____prgfn',
+                        'basic_auth_var_name'      => '____prba',
                         'max_file_size'            => -1,
                         'allow_hotlinking'         => 0,
                         'upon_hotlink'             => 1,
@@ -66,7 +66,7 @@ $_labels            = array
                         'show_images'     => array('Show Images', 'Show images on browsed pages'),
                         'show_referer'    => array('Show Referer', 'Show actual referring Website'),
                         'rotate13'        => array('Rotate13', 'Use ROT13 encoding on the address'),
-                        'base64_encode'   => array('Base64', 'Use base64 encodng on the address'),
+                        'base64_encode'   => array('Base64', 'Use base64 encoding on the address'),
                         'strip_meta'      => array('Strip Meta', 'Strip meta information tags from pages'),
                         'strip_title'     => array('Strip Title', 'Strip page title'),
                         'session_cookies' => array('Session Cookies', 'Store cookies for this session only')
@@ -345,9 +345,9 @@ do
     $_request_headers .= " HTTP/1.0\r\n";
     $_request_headers .= 'Host: ' . $_url_parts['host'] . $_url_parts['port_ext'] . "\r\n";
 
-    if (isset($_SERVER['HTTP_USER_AGENT']))
+    if (!empty($_user_agent))
     {
-        $_request_headers .= 'User-Agent: ' . $_SERVER['HTTP_USER_AGENT'] . "\r\n";
+        $_request_headers .= 'User-Agent: ' . $_user_agent . "\r\n";
     }
     if (isset($_SERVER['HTTP_ACCEPT']))
     {
@@ -675,9 +675,11 @@ else
     }
     if ($_flags['remove_scripts'])
     {
-        $_response_body = preg_replace('#<\s*script[^>]*?>.*?<\s*/\s*script\s*>#si', '', $_response_body);
-        $_response_body = preg_replace("#(\bon[a-z]+)\s*=\s*(?:\"([^\"]*)\"?|'([^']*)'?|([^'\"\s>]*))?#i", '', $_response_body);
-        $_response_body = preg_replace('#<noscript>(.*?)</noscript>#si', "$1", $_response_body);
+        $_response_body = preg_replace('#<\s*script[^>]*?><\s*\/\s*script\s*>#si', '', $_response_body);
+        $_response_body = preg_replace('#<\s*script[^>]*?>(.+?(?=<\/script>))?<\s*\/\s*script\s*>#si', '', $_response_body);
+        $_response_body = preg_replace("#([\s])?(onload|onclick|onmouseover|onmouseout|onkeydown|onload)=\"([^\"]*)\"([\s])?#i", ' ', $_response_body);
+        $_response_body = preg_replace("/([\s])?href=\"javascript:.+?(?=\")\"([\s])?/", ' ', $_response_body);
+        //$_response_body = preg_replace('#<noscript>(.*?)</noscript>#si', "$1", $_response_body);
     }
     if (!$_flags['show_images'])
     {
@@ -691,7 +693,7 @@ else
     $tags = array
     (
         'a'          => array('href'),
-        'img'        => array('src', 'longdesc'),
+        'img'        => array('src', 'longdesc', 'srcset', 'data-src'),
         'image'      => array('src', 'longdesc'),
         'body'       => array('background'),
         'base'       => array('href'),
@@ -702,7 +704,7 @@ else
         'input'      => array('src', 'usemap'),
         'form'       => array('action'),
         'area'       => array('href'),
-        'link'       => array('href', 'src', 'urn'),
+        'link'       => array('href', 'src', 'urn', 'integrity'),
         'meta'       => array('content'),
         'param'      => array('value'),
         'applet'     => array('codebase', 'code', 'object', 'archive'),
@@ -734,7 +736,7 @@ else
         $_response_body = str_replace($matches[$i][0], $matches[$i][1]. proxify_css($matches[$i][2]) .$matches[$i][3], $_response_body);
     }
 
-    preg_match_all("#<\s*([a-zA-Z\?-]+)([^>]+)>#S", $_response_body, $matches);
+    preg_match_all("#<\s*([a-zA-Z0-9\?-]+)([^>]+)>#S", $_response_body, $matches);
 
     for ($i = 0, $count_i = count($matches[0]); $i < $count_i; ++$i)
     {
@@ -768,6 +770,28 @@ else
                         $attrs['href'] = complete_url($attrs['href']);
                     }
                     break;
+                case 'link':
+                    if (isset($attrs['href']))
+                    {
+                        $rebuild = true;
+                        $attrs['href'] = complete_url($attrs['href']);
+                    }
+                    if (isset($attrs['src']))
+                    {
+                        $rebuild = true;
+                        $attrs['src'] = complete_url($attrs['src']);
+                    }
+                    if (isset($attrs['urn']))
+                    {
+                        $rebuild = true;
+                        $attrs['urn'] = complete_url($attrs['urn']);
+                    }
+                    if (isset($attrs['integrity']))
+                    {
+                        $rebuild = true;
+                        $attrs['integrity'] = '';
+                    }
+                    break;
                 case 'img':
                     if (isset($attrs['src']))
                     {
@@ -779,12 +803,28 @@ else
                         $rebuild = true;
                         $attrs['longdesc'] = complete_url($attrs['longdesc']);
                     }
+                    if (isset($attrs['srcset']))
+                    {
+                        $rebuild = true;
+                        $attrs['srcset'] = '';
+                    }
+                    if (isset($attrs['data-src']))
+                    {
+                        $rebuild = true;
+                        $attrs['data-src'] = complete_url($attrs['data-src']);
+                        if (!isset($attrs['src']))
+                        {
+                            $rebuild = true;
+                            $attrs['src'] = $attrs['data-src'];
+                            $attrs['data-src'] = $attrs['data-src'];
+                        }
+                    }
                     break;
                 case 'form':
                     if (isset($attrs['action']))
                     {
                         $rebuild = true;
-
+                        
                         if (trim($attrs['action']) === '')
                         {
                             $attrs['action'] = $_url_parts['path'];
@@ -792,11 +832,19 @@ else
                         if (!isset($attrs['method']) || strtolower(trim($attrs['method'])) === 'get')
                         {
                             $extra_html = '<input type="hidden" name="' . $_config['get_form_name'] . '" value="' . encode_url(complete_url($attrs['action'], false)) . '" />';
-                            $attrs['action'] = '';
+                            $attrs['action'] = complete_url($_url);
                             break;
                         }
-
+                        
                         $attrs['action'] = complete_url($attrs['action']);
+                    } else {
+                        $rebuild = true;
+                        if (!isset($attrs['method']) || strtolower(trim($attrs['method'])) === 'get')
+                        {
+                            $extra_html = '<input type="hidden" name="' . $_config['get_form_name'] . '" value="' . encode_url(complete_url($_url_parts['path'], false)) . '" />';
+                            $attrs['action'] = complete_url($_url);
+                            break;
+                        }
                     }
                     break;
                 case 'base':
@@ -971,9 +1019,13 @@ foreach ($_response_headers as $name => $array)
 {
     foreach ($array as $value)
     {
-        header($_response_keys[$name] . ': ' . $value, false);
+        $h_name = $_response_keys[$name];
+        if(strtolower($h_name) != 'content-security-policy' &&
+         strtolower($h_name) != 'content-security-policy-report-only' &&
+         strtolower($h_name) != 'x-xss-protection') {
+            header($h_name . ': ' . $value, false);
+        }
     }
 }
 
 echo $_response_body;
-?>
