@@ -118,6 +118,7 @@ $_basic_auth_header = '';
 $_basic_auth_realm  = '';
 $_auth_creds        = array();
 $_response_body     = '';
+$_user_agent        = $_SERVER['HTTP_USER_AGENT'];
 
 # to bind to a specific ip set $_bindip to desired IP
 # if you do not need to set a specific port use 0 as default
