@@ -109,10 +109,28 @@ function complete_url($url, $proxify = true)
     {
         return '';
     }
+
+    if(substr($url, 0, 5) == 'data:')
+    {
+        return $url;
+    }
+
+    if(substr($url, 0, 11) == 'javascript:')
+    {
+        return $url;
+    }
+
+    if(substr($url, 0, 6) == 'about:')
+    {
+        return $url;
+    }
     
     $hash_pos = strrpos($url, '#');
     $fragment = $hash_pos !== false ? '#' . substr($url, $hash_pos) : '';
     $sep_pos  = strpos($url, '://');
+    $BASE_ORIGIN = parse_url($GLOBALS['_url']);
+    $GLOBALS['_base']['scheme'] = empty($GLOBALS['_base']['scheme']) ? $BASE_ORIGIN['scheme'] : $GLOBALS['_base']['scheme'];
+    $GLOBALS['_base']['host'] = empty($GLOBALS['_base']['host']) ? $BASE_ORIGIN['host'] : $GLOBALS['_base']['host'];
     
     if ($sep_pos === false || $sep_pos > 5)
     {
@@ -143,7 +161,7 @@ function complete_url($url, $proxify = true)
 
 function proxify_inline_css($css)
 {
-    preg_match_all('#url\s*\(\s*(([^)]*(\\\))*[^)]*)(\)|$)?#i', $css, $matches, PREG_SET_ORDER);
+    preg_match_all('#url\s*\(\s*(.+?(?=\)[f;,}!\s*]))\)#i', $css, $matches, PREG_SET_ORDER);
 
     for ($i = 0, $count = count($matches); $i < $count; ++$i)
     {
@@ -180,6 +198,10 @@ function proxify_css_url($url)
 {
     $url   = trim($url);
     $delim = strpos($url, '"') === 0 ? '"' : (strpos($url, "'") === 0 ? "'" : '');
+
+    if(substr(trim($url, $delim), 0, 5) == 'data:' || substr(trim($url, $delim), 0, 6) == 'rms://') {
+        return $delim . trim($url, $delim) . $delim;
+    }
 
     return $delim . preg_replace('#([\(\),\s\'"\\\])#', '\\$1', complete_url(trim(preg_replace('#\\\(.)#', '$1', trim($url, $delim))))) . $delim;
 }
