@@ -741,7 +741,7 @@ else
 
     for ($i = 0, $count_i = count($matches[0]); $i < $count_i; ++$i)
     {
-        if (!preg_match_all("#([a-zA-Z\-\/]+)\s*(?:=\s*(?:\"([^\">]*)\"?|'([^'>]*)'?|([^'\"\s]*)))?#S", $matches[2][$i], $m, PREG_SET_ORDER))
+        if (!preg_match_all("#([a-zA-Z0-9\-\/]+)\s*(?:=\s*(?:\"([^\">]*)\"?|'([^'>]*)'?|([^'\"\s]*)))?#S", $matches[2][$i], $m, PREG_SET_ORDER))
         {
             continue;
         }
