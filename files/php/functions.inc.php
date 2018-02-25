@@ -1,7 +1,7 @@
 <?php
 function show_report($data)
 {    
-    require_once("./files/php/index.inc.php");
+	require_once("./files/php/index.inc.php");
     exit(0);
 }
 
@@ -107,17 +107,15 @@ function complete_url($url, $proxify = true)
         return '';
     }
 
-    if(substr($url, 0, 5) == 'data:')
-    {
-        return $url;
-    }
-
-    if(substr($url, 0, 11) == 'javascript:')
-    {
-        return $url;
-    }
-
-    if(substr($url, 0, 6) == 'about:')
+    if(substr(trim($url, $delim), 0, 5) == 'data:'         ||
+       substr(trim($url, $delim), 0, 11) == 'javascript:'  ||
+       substr(trim($url, $delim), 0, 6) == 'about:'        ||
+       substr(trim($url, $delim), 0, 7) == 'magnet:'       ||
+       substr(trim($url, $delim), 0, 4) == 'tel:'          ||
+       substr(trim($url, $delim), 0, 8) == 'ios-app:'      ||
+       substr(trim($url, $delim), 0, 12) == 'android-app:' ||
+       substr(trim($url, $delim), 0, 7) == 'mailto:'       ||
+       substr(trim($url, $delim), 0, 6) == 'rms://')
     {
         return $url;
     }
@@ -142,12 +140,6 @@ function complete_url($url, $proxify = true)
             case '#':
                 $proxify = false;
                 break;
-            case 'm':
-                if (substr($url, 0, 7) == 'mailto:')
-                {
-                    $proxify = false;
-                    break;
-                }
             default:
                 $url = $GLOBALS['_base']['base'] . '/' . $url;
         }
@@ -196,9 +188,22 @@ function proxify_css_url($url)
     $url   = trim($url);
     $delim = strpos($url, '"') === 0 ? '"' : (strpos($url, "'") === 0 ? "'" : '');
 
-    if(substr(trim($url, $delim), 0, 5) == 'data:' || substr(trim($url, $delim), 0, 6) == 'rms://') {
+    if(substr(trim($url, $delim), 0, 5) == 'data:'         ||
+       substr(trim($url, $delim), 0, 11) == 'javascript:'  ||
+       substr(trim($url, $delim), 0, 6) == 'about:'        ||
+       substr(trim($url, $delim), 0, 7) == 'magnet:'       ||
+       substr(trim($url, $delim), 0, 4) == 'tel:'          ||
+       substr(trim($url, $delim), 0, 8) == 'ios-app:'      ||
+       substr(trim($url, $delim), 0, 12) == 'android-app:' ||
+       substr(trim($url, $delim), 0, 7) == 'mailto:'       ||
+       substr(trim($url, $delim), 0, 6) == 'rms://')
+    {
         return $delim . trim($url, $delim) . $delim;
     }
+
+    //if(substr(trim($url, $delim), 0, 5) == 'data:' || substr(trim($url, $delim), 0, 6) == 'rms://') {
+    //    return $delim . trim($url, $delim) . $delim;
+    //}
 
     return $delim . preg_replace('#([\(\),\s\'"\\\])#', '\\$1', complete_url(trim(preg_replace('#\\\(.)#', '$1', trim($url, $delim))))) . $delim;
 }
