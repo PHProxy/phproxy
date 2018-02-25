@@ -1,6 +1,6 @@
 ## PHProxy - Web based PHP Proxy
 
-PHProxy is a web HTTP proxy written in php. It is designed to bypass proxy restrictions through a web interface very similar to the popular [CGIProxy](http://www.jmarshall.com/tools/cgiproxy/). The only thing that PHProxy needs is a web server with PHP installed (see Requirements below). Be aware though, that the sever has to be able to access those resources to deliver them to you.
+PHProxy is a web HTTP proxy written in PHP. It is designed to bypass proxy restrictions through a web interface very similar to the popular [CGIProxy](http://www.jmarshall.com/tools/cgiproxy/). The only thing that PHProxy needs is a web server with PHP installed (see Requirements below). Be aware though, that the sever has to be able to access those resources to deliver them to you.
 
 ## Support
 
