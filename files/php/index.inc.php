@@ -126,6 +126,18 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
 			cursor: pointer;
 			text-decoration: none;
 		}
+		.button-cancel {
+			border-radius: 2px;
+			background-color: #a4bbcc;
+			color: #fff;
+			font: 700 13.3333px Arial;
+			box-shadow: 1px 2px 4px 0 rgba(0, 0, 0, .08);
+			padding: 14px 22px;
+			border: 0;
+			margin-top: 10px;
+			cursor: pointer;
+			text-decoration: none;
+		}
 		p.explanation {
 			padding: 15px 20px;
 			line-height: 1.5;
@@ -200,7 +212,7 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
 				<div class="form-row">
 					<label>
 						<span>Enter full URL:</span>
-						<input type="text" name="<?php echo $GLOBALS['_config']['url_var_name'] ?>" value="<?php echo isset($GLOBALS['_url']) ? htmlspecialchars($GLOBALS['_url']) : '' ?>" placeholder="http://www.google.com" required>
+						<input type="text" value="<?php echo !empty($_GET['__iv']) ? htmlspecialchars($_GET['__iv']) : (isset($GLOBALS['_url']) ? htmlspecialchars($GLOBALS['_url']) : '') ; ?>" name="<?php echo $GLOBALS['_config']['url_var_name'] ?>" value="<?php echo isset($GLOBALS['_url']) ? htmlspecialchars($GLOBALS['_url']) : '' ?>" placeholder="http://www.google.com" required>
 					</label>
 				</div>
 				
@@ -284,7 +296,7 @@ switch ($data['category'])
 				</div>
 				
 				<div class="form-row">
-					<button class="button-submit" type="submit">Login</button> <a class="button-submit" href="index.php">Cancel</a>
+					<button class="button-submit" type="submit">Login</button> <a class="button-cancel" href="index.php<?php echo '?__iv=' . rawurlencode($GLOBALS['_url']); ?>">Cancel</a>
 				</div>
 			</form>
 			<p class="info"><b>Authentication Required: </b>Enter your username and password for "<?php echo htmlspecialchars($data['realm']); ?>" on <?php echo $GLOBALS['_url_parts']['host']; ?></p>
