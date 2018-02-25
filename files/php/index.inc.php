@@ -114,16 +114,17 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
             width: auto
         }
 
-        form button {
+        .button-submit {
             border-radius: 2px;
             background-color: #6caee0;
             color: #fff;
-            font-weight: 700;
+            font: 700 13.3333px Arial;
             box-shadow: 1px 2px 4px 0 rgba(0, 0, 0, .08);
             padding: 14px 22px;
             border: 0;
-			margin-top: 10px;
-			cursor: pointer;
+            margin-top: 10px;
+            cursor: pointer;
+            text-decoration: none;
         }
         p.explanation {
             padding: 15px 20px;
@@ -187,6 +188,8 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
         }
 	</style>
 	<body>
+
+    <?php if($data['category'] != 'auth'): ?>
 		<div class="main">
 			<div class="form-title-row">
 				<h1><?php echo $GLOBALS['_config']['site_name'];?></h1>
@@ -202,7 +205,7 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
 				</div>
 				
 				<div class="form-row">
-					<button type="submit">Proxify</button>
+					<button class="button-submit" type="submit">Proxify</button>
 				</div>
 			</form>
 
@@ -210,14 +213,6 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
 
 switch ($data['category'])
 {
-    case 'auth':
-        echo '<p class="info">'
-            .'<b>Authentication Required: </b>';
-        $message = 'Enter your username and password for "'
-                   .htmlspecialchars($data['realm'])
-                   .'" on '.$GLOBALS['_url_parts']['host'].'.';
-				echo $message.'</p>';
-        break;
     case 'error':
         echo '<p class="error">';
         
@@ -268,7 +263,7 @@ switch ($data['category'])
 ?>
 
 		</div>
-		
+		<?php endif; ?>
     
     <?php if($data['category'] == 'auth'): ?>
 		<div class="main">
@@ -289,9 +284,10 @@ switch ($data['category'])
 				</div>
 				
 				<div class="form-row">
-					<button type="submit">Login</button>
+					<button class="button-submit" type="submit">Login</button> <a class="button-submit" href="index.php">Cancel</a>
 				</div>
 			</form>
+			<p class="info"><b>Authentication Required: </b>Enter your username and password for "<?php echo htmlspecialchars($data['realm']); ?>" on <?php echo $GLOBALS['_url_parts']['host']; ?></p>
 		</div>
     <?php endif; ?>
 			
