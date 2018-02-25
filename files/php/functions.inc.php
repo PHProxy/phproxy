@@ -121,7 +121,7 @@ function complete_url($url, $proxify = true)
     }
     
     $hash_pos = strrpos($url, '#');
-    $fragment = $hash_pos !== false ? '#' . substr($url, $hash_pos) : '';
+    $fragment = $hash_pos !== false ? substr($url, $hash_pos) : '';
     $sep_pos  = strpos($url, '://');
     $BASE_ORIGIN = parse_url($GLOBALS['_url']);
     $GLOBALS['_base']['scheme'] = empty($GLOBALS['_base']['scheme']) ? $BASE_ORIGIN['scheme'] : $GLOBALS['_base']['scheme'];
@@ -144,7 +144,7 @@ function complete_url($url, $proxify = true)
                 $url = $GLOBALS['_base']['base'] . '/' . $url;
         }
     }
-
+	
     return $proxify ? "{$GLOBALS['_script_url']}?{$GLOBALS['_config']['url_var_name']}=" . encode_url($url) . $fragment : $url;
 }
 
