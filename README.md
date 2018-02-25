@@ -1,12 +1,12 @@
 ## PHProxy - Web based PHP Proxy
 
-PHProxy is a web HTTP proxy written in php. It is designed to bypass proxy restrictions through a web interface very similar to the popular CGIProxy. The only thing that PHProxy needs is a web server with PHP installed (see Requirements below). Be aware though, that the sever has to be able to access those resources to deliver them to you.
-
-Originaly developed in [SourceForge](http://www.sourceforge.net/projects/poxy/) during 2002-2007 and then abandoned. This project needs to live, this is why I forked the project and will continue to develop it.
+PHProxy is a web HTTP proxy written in php. It is designed to bypass proxy restrictions through a web interface very similar to the popular [CGIProxy](http://www.jmarshall.com/tools/cgiproxy/). The only thing that PHProxy needs is a web server with PHP installed (see Requirements below). Be aware though, that the sever has to be able to access those resources to deliver them to you.
 
 ## Support
 
-Use the Github functionality here: https://github.com/PHProxy/PHProxy/issues/new
+ * Create an issue: https://github.com/PHProxy/PHProxy/issues/new
+ * Email me: phproxy@phoenixpeca.xyz
+ * Website: https://www.phoenixpeca.xyz/
 
 ## License
 
@@ -15,20 +15,29 @@ A copy of the license is provided in this package in the filename `LICENSE.md`.
 
 ## Requirements
 
- * PHP > 5
- * `safe_mode=off` / `fsockopen()` allowed
- * OpenSSL for HTTPS support
- * zlib for output compression
- * `file_uploads=on` for file uploads.
+ * PHP version > 5
+ * `safe_mode` turned off or at least having the `fsockopen()` function not disabled
+ * OpenSSL for support for secure connections (https)
+ * Zlib for output compression
+ * `file_uploads` turned On for HTTP file uploads.
 
 ## Installation
 
-Copy the files of the repository in your public web server folder.
+Copy the files of the repository in your public web server folder or to a
+directory of your liking (prefrebly in its own directory).
 
 ```
 cd /var/www/html/
 git clone https://github.com/PHProxy/phproxy.git
 ```
+
+## How it Works
+
+You simply supply a URL to the form and click Browse. The script then 
+accesses that URL, and if it has any HTML contents, it modifies 
+any URLs so that they point back to the script. Of course, there is more
+to it than this, but if you would like to know more in
+detail, view the source code.
 
 ## Bugs and Limitations
 
