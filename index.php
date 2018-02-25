@@ -27,6 +27,7 @@ $_config            = array
                         'flags_var_name'           => '_fl',
                         'get_form_name'            => '____prgfn',
                         'basic_auth_var_name'      => '____prba',
+                        'site_name'                => 'PHProxy',
                         'max_file_size'            => -1,
                         'allow_hotlinking'         => 0,
                         'upon_hotlink'             => 1,
@@ -118,7 +119,8 @@ $_basic_auth_header = '';
 $_basic_auth_realm  = '';
 $_auth_creds        = array();
 $_response_body     = '';
-$_user_agent        = $_SERVER['HTTP_USER_AGENT'];
+#$_user_agent        = isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : 'SamsungI8910/SymbianOS/6.1 Series60/3.0';
+$_user_agent        = 'SamsungI8910/SymbianOS/6.1 Series60/3.0';
 
 # to bind to a specific ip set $_bindip to desired IP
 # if you do not need to set a specific port use 0 as default
@@ -678,9 +680,9 @@ else
     {
         $_response_body = preg_replace('#<\s*script[^>]*?><\s*\/\s*script\s*>#si', '', $_response_body);
         $_response_body = preg_replace('#<\s*script[^>]*?>(.+?(?=<\/script>))?<\s*\/\s*script\s*>#si', '', $_response_body);
-        $_response_body = preg_replace("#([\s])?(onload|onclick|onmouseover|onmouseout|onkeydown|onload)=\"([^\"]*)\"([\s])?#i", ' ', $_response_body);
+        $_response_body = preg_replace("#([\s])?(onload|onsubmit|onclick|onmouseover|onmouseout|onkeydown|onload)=\"([^\"]*)\"([\s])?#i", ' ', $_response_body);
         $_response_body = preg_replace("/([\s])?href=\"javascript:.+?(?=\")\"([\s])?/", ' ', $_response_body);
-        //$_response_body = preg_replace('#<noscript>(.*?)</noscript>#si', "$1", $_response_body);
+        $_response_body = preg_replace('#<noscript>(.*?)</noscript>#si', "$1", $_response_body);
     }
     if (!$_flags['show_images'])
     {
@@ -693,7 +695,7 @@ else
 
     $tags = array
     (
-        'a'          => array('href'),
+        'a'          => array('href', 'data-inbound-url', 'data-href-url'),
         'img'        => array('src', 'longdesc', 'srcset', 'data-src'),
         'image'      => array('src', 'longdesc'),
         'body'       => array('background'),
@@ -770,6 +772,16 @@ else
                         $rebuild = true;
                         $attrs['href'] = complete_url($attrs['href']);
                     }
+                    if (isset($attrs['data-inbound-url']))
+                    {
+                        $rebuild = true;
+                        $attrs['data-inbound-url'] = complete_url($attrs['data-inbound-url']);
+                    }
+                    if (isset($attrs['data-href-url']))
+                    {
+                        $rebuild = true;
+                        $attrs['data-href-url'] = complete_url($attrs['data-href-url']);
+                    }
                     break;
                 case 'link':
                     if (isset($attrs['href']))
@@ -807,18 +819,34 @@ else
                     if (isset($attrs['srcset']))
                     {
                         $rebuild = true;
+                        preg_match('/^[^, ]+/', $attrs['srcset'], $img_src);
+                        if (!isset($attrs['src']) || strlen(file_get_contents($img_src[0])) >= 500)
+                        {
+                            $rebuild = true;
+                            $attrs['src'] = complete_url($img_src[0]);
+                        }
                         $attrs['srcset'] = '';
+                    }
+                    if (isset($attrs['data-srcset']))
+                    {
+                        $rebuild = true;
+                        preg_match('/^[^, ]+/', $attrs['data-srcset'], $img_src);
+                        if (!isset($attrs['src']) || strlen(file_get_contents($img_src[0])) >= 500)
+                        {
+                            $rebuild = true;
+                            $attrs['src'] = complete_url($img_src[0]);
+                        }
+                        $attrs['data-srcset'] = '';
                     }
                     if (isset($attrs['data-src']))
                     {
                         $rebuild = true;
-                        $attrs['data-src'] = complete_url($attrs['data-src']);
-                        if (!isset($attrs['src']))
+                        if (!isset($attrs['src']) || strlen(file_get_contents($attrs['src'])) <= 500)
                         {
                             $rebuild = true;
-                            $attrs['src'] = $attrs['data-src'];
-                            $attrs['data-src'] = $attrs['data-src'];
+                            $attrs['src'] = complete_url($attrs['data-src']);
                         }
+                        $attrs['data-src'] = '';
                     }
                     break;
                 case 'form':
@@ -826,7 +854,7 @@ else
                     {
                         $rebuild = true;
                         
-                        if (trim($attrs['action']) === '')
+                        if (trim($attrs['action']) === '' || trim($attrs['action']){0} === '#')
                         {
                             $attrs['action'] = $_url_parts['path'];
                         }
@@ -984,6 +1012,7 @@ else
         }
     }
 
+    include('./files/php/misc.php');
     if ($_flags['include_form'] && !isset($_GET['nf']))
     {
         $_url_form      = '<div style="width:100%;margin:0;text-align:center;border-bottom:1px solid #725554;color:#000000;background-color:#F2FDF3;font-size:12px;font-weight:bold;font-family:Bitstream Vera Sans,arial,sans-serif;padding:4px;">'
@@ -1005,11 +1034,12 @@ else
         $_response_body = preg_replace('#\<\s*body(.*?)\>#si', "$0\n$_url_form" , $_response_body, 1);
     }
 }
-
 $_response_keys['content-disposition'] = 'Content-Disposition';
 $_response_headers['content-disposition'][0] = empty($_content_disp) ? ($_content_type == 'application/octet_stream' ? 'attachment' : 'inline') . '; filename="' . $_url_parts['file'] . '"' : $_content_disp;
 $_response_keys['content-length'] = 'Content-Length';
 $_response_headers['content-length'][0] = strlen($_response_body);
+$_response_keys['proxx-orig-url'] = 'Proxx-Orig-URL';
+$_response_headers['proxx-orig-url'][0] = $_url;
 $_response_headers   = array_filter($_response_headers);
 $_response_keys      = array_filter($_response_keys);
 
