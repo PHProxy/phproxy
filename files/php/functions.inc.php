@@ -1,10 +1,7 @@
 <?php
-
-
-
 function show_report($data)
 {    
-	require_once("./files/php/index.inc.php");
+    require_once("./files/php/index.inc.php");
     exit(0);
 }
 
@@ -233,5 +230,3 @@ function proxify_css_url($url)
 		
         return str_replace(array('&amp;', '&#38;'), '&', $url);
     }
-
-?>
