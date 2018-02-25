@@ -55,117 +55,117 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
 			font-weight: 700;
 		}
 		form input {
-            color: #5f5f5f;
-            box-sizing: border-box;
-            box-shadow: 1px 2px 4px 0 rgba(0, 0, 0, .08);
-            padding: 12px 18px;
-            border: 1px solid #dbdbdb;
+			color: #5f5f5f;
+			box-sizing: border-box;
+			box-shadow: 1px 2px 4px 0 rgba(0, 0, 0, .08);
+			padding: 12px 18px;
+			border: 1px solid #dbdbdb;
 			margin-bottom: 10px;
-        }
+		}
 		
-        form input[type=email],
+		form input[type=email],
 		form input[type=username],
-        form input[type=password],
-        form input[type=text],
-        form textarea {
-            width: 100%
-        }
+		form input[type=password],
+		form input[type=text],
+		form textarea {
+			width: 100%
+		}
 
-        form input[type=number] {
-            max-width: 100px
-        }
+		form input[type=number] {
+			max-width: 100px
+		}
 
-        form input[type=checkbox],
-        form input[type=radio] {
-            box-shadow: none;
-            width: auto
-        }
+		form input[type=checkbox],
+		form input[type=radio] {
+			box-shadow: none;
+			width: auto
+		}
 
-        form textarea {
-            color: #5f5f5f;
-            box-sizing: border-box;
-            box-shadow: 1px 2px 4px 0 rgba(0, 0, 0, .08);
-            padding: 12px 18px;
-            border: 1px solid #dbdbdb;
-            resize: none;
-            min-height: 80px;
-        }
+		form textarea {
+			color: #5f5f5f;
+			box-sizing: border-box;
+			box-shadow: 1px 2px 4px 0 rgba(0, 0, 0, .08);
+			padding: 12px 18px;
+			border: 1px solid #dbdbdb;
+			resize: none;
+			min-height: 80px;
+		}
 
-        form select {
-            background-color: #fff;
-            color: #5f5f5f;
-            box-sizing: border-box;
-            width: 240px;
-            box-shadow: 1px 2px 4px 0 rgba(0, 0, 0, .08);
-            padding: 12px 18px;
-            border: 1px solid #dbdbdb
-        }
+		form select {
+			background-color: #fff;
+			color: #5f5f5f;
+			box-sizing: border-box;
+			width: 240px;
+			box-shadow: 1px 2px 4px 0 rgba(0, 0, 0, .08);
+			padding: 12px 18px;
+			border: 1px solid #dbdbdb
+		}
 
-        form .form-radio-buttons>div {
-            margin-bottom: 10px
-        }
+		form .form-radio-buttons>div {
+			margin-bottom: 10px
+		}
 
-        form .form-radio-buttons label span {
-            margin-left: 8px;
-            color: #5f5f5f
-        }
+		form .form-radio-buttons label span {
+			margin-left: 8px;
+			color: #5f5f5f
+		}
 
-        form .form-radio-buttons input {
-            width: auto
-        }
+		form .form-radio-buttons input {
+			width: auto
+		}
 
-        .button-submit {
-            border-radius: 2px;
-            background-color: #6caee0;
-            color: #fff;
-            font: 700 13.3333px Arial;
-            box-shadow: 1px 2px 4px 0 rgba(0, 0, 0, .08);
-            padding: 14px 22px;
-            border: 0;
-            margin-top: 10px;
-            cursor: pointer;
-            text-decoration: none;
-        }
-        p.explanation {
-            padding: 15px 20px;
-            line-height: 1.5;
-            background-color: #FFFFE0;
-            font-size: 13px;
-            text-align: center;
-            margin-top: 40px;
-            color: #6B6B48;
-            border-radius: 3px;
-            border-bottom: 2px solid #ECECD0;
+		.button-submit {
+			border-radius: 2px;
+			background-color: #6caee0;
+			color: #fff;
+			font: 700 13.3333px Arial;
+			box-shadow: 1px 2px 4px 0 rgba(0, 0, 0, .08);
+			padding: 14px 22px;
+			border: 0;
+			margin-top: 10px;
+			cursor: pointer;
+			text-decoration: none;
+		}
+		p.explanation {
+			padding: 15px 20px;
+			line-height: 1.5;
+			background-color: #FFFFE0;
+			font-size: 13px;
+			text-align: center;
+			margin-top: 40px;
+			color: #6B6B48;
+			border-radius: 3px;
+			border-bottom: 2px solid #ECECD0;
 			border-right: 2px solid #ECECD0;
-            text-align: left
-        }
-        p.error {
-					padding: 15px 20px;
-					line-height: 1.5;
-					background-color: #ff7272;
-					font-size: 13px;
-					text-align: center;
-					margin-top: 40px;
-					color: #ffffff;
-					border-radius: 3px;
-					border-bottom: 2px solid #fd3333;
-					border-right: 2px solid #c1294c;
-					text-align: left;
-        }
+			text-align: left
+		}
+		p.error {
+			padding: 15px 20px;
+			line-height: 1.5;
+			background-color: #ff7272;
+			font-size: 13px;
+			text-align: center;
+			margin-top: 40px;
+			color: #ffffff;
+			border-radius: 3px;
+			border-bottom: 2px solid #fd3333;
+			border-right: 2px solid #c1294c;
+			text-align: left;
+		}
 		
-        p.info {
-					padding: 15px 20px;
-					line-height: 1.5;
-					background-color: #56dcb1;
-					font-size: 13px;
-					text-align: center;
-					margin-top: 40px;
-					color: #ffffff;
-					border-radius: 3px;
-					border-bottom: 2px solid #76dc75;
-					border-right: 2px solid #30cc2e;
-					text-align: left;
-        }
+		p.info {
+			padding: 15px 20px;
+			line-height: 1.5;
+			background-color: #56dcb1;
+			font-size: 13px;
+			text-align: center;
+			margin-top: 40px;
+			color: #ffffff;
+			border-radius: 3px;
+			border-bottom: 2px solid #76dc75;
+			border-right: 2px solid #30cc2e;
+			text-align: left;
+		}
 		
 		.auth-header {
 			border-bottom: 2px solid #ff8100 !important;
@@ -175,17 +175,17 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
 			margin-top: 10px;
 		}
 		
-        @media (max-width:600px) {
-            .main {
-                padding: 30px
-            }
+		@media (max-width:600px) {
+			.main {
+				padding: 30px
+			}
 			body {
 				background: #fff;
 			}
 			.main {
 				box-shadow: none;
 			}
-        }
+		}
 	</style>
 	<body>
 
