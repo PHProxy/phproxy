@@ -1,0 +1,29 @@
+site_name: "PHProxy: Documentation"
+site_url: https://phproxy.github.io/phproxy-docs/
+site_favicon: images/favicon.ico
+copyright: 'Copyright &copy; 2017 Phoenix Eve Aspacio'
+repo_name: PHProxy/phproxy
+repo_url: https://github.com/PHProxy/phproxy
+edit_uri: ../phproxy-docs/edit/master/docs/
+remote_branch: gh-pages
+theme: material
+markdown_extensions:
+  - codehilite(guess_lang=true)
+  - toc(permalink=true)
+  - admonition
+  - pymdownx.magiclink
+  - pymdownx.tasklist(custom_checkbox=true)
+  - pymdownx.mark
+  - pymdownx.tilde
+  - footnotes
+pages:
+- 'Home': 'index.md'
+extra:
+  logo: 'images/logo.png'
+  palette:
+    primary: 'indigo'
+    accent: 'orange'
+  social:
+    - type: github-alt
+      link: https://github.com/PHProxy
+extra_css: [extra.css]
