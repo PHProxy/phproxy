@@ -8,8 +8,7 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en-US" xml:lang="en-US">
 	<head>
 		<title><?php echo $GLOBALS['_config']['site_name'];?></title>
-	</head>
-	<style>
+<style>
 		* {
 			padding: 0;
 			margin: 0
@@ -211,6 +210,8 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
 			}
 		}
 	</style>
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+	</head>
 	<body>
 
     <?php if($data['category'] != 'auth'): ?>
