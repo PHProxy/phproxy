@@ -195,6 +195,9 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
 			text-align: initial;
 			padding-left: 4%;
 		}
+		.option label input {
+			margin-right: 10px;
+		}
 		
 		@media (max-width:600px) {
 			.main {
@@ -211,12 +214,12 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
 	<body>
 
     <?php if($data['category'] != 'auth'): ?>
+			<form method="post" action="<?php echo $_SERVER['PHP_SELF']; ?>">
 		<div class="main">
 			<div class="form-title-row">
 				<h1><?php echo $GLOBALS['_config']['site_name'];?></h1>
 			</div>
 
-			<form method="post" action="<?php echo $_SERVER['PHP_SELF']; ?>">
 			
 				<div class="form-row">
 					<label>
@@ -228,21 +231,6 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
 				<div class="form-row">
 					<button class="button-submit" type="submit">Proxify</button>
 				</div>
-
-<br><br>
-				
-<div class="prx-opt-menu"><?php
-      
-      foreach ($GLOBALS['_flags'] as $flag_name => $flag_value)
-      {
-          if (!$GLOBALS['_frozen_flags'][$flag_name])
-          {
-              echo '<li class="option"><label><input type="checkbox" name="' . $GLOBALS['_config']['flags_var_name'] . '[' . $flag_name . ']"' . ($flag_value ? ' checked="checked"' : '') . ' />' . $GLOBALS['_labels'][$flag_name][1] . '</label></li>' . "\n";
-          }
-      }
-				?></div>
-
-			</form>
 
 <?php
 
@@ -298,14 +286,35 @@ switch ($data['category'])
 ?>
 
 		</div>
+				<?php if(in_array(0, $GLOBALS['_frozen_flags'])): ?>
+				<div class="main">
+			<div class="form-title-row">
+				<h1>Proxy Options</h1>
+			</div>
+
+				<div class="prx-opt-menu">
+<?php
+foreach ($GLOBALS['_flags'] as $flag_name => $flag_value)
+{
+	if (!$GLOBALS['_frozen_flags'][$flag_name])
+	{
+		echo '<li class="option"><label><input type="checkbox" name="' . $GLOBALS['_config']['flags_var_name'] . '[' . $flag_name . ']"' . ($flag_value ? ' checked="checked"' : '') . ' />' . $GLOBALS['_labels'][$flag_name][1] . '</label></li>' . "\n";
+	}
+}
+?>
+				</div>
+
+				</div>
+				<?php endif; ?>
+		</form>
 
 		<?php elseif($data['category'] == 'auth'): ?>
 
+			<form class="auth" method="post" action="<?php echo $_SERVER['REQUEST_URI']; ?>">
 		<div class="main main-auth-box">
 			<div class="form-title-row">
 				<h1 class="auth-header">Authentication Required</h1>
 			</div>
-			<form class="auth" method="post" action="<?php echo $_SERVER['REQUEST_URI']; ?>">
 				<input type="hidden" name="<?php echo $GLOBALS['_config']['basic_auth_var_name'] ?>" value="<?php echo base64_encode($data['realm']) ?>" />
 				<div class="form-row">
 					<label>
@@ -322,13 +331,13 @@ switch ($data['category'])
 					<button class="button-submit" type="submit">Login</button>
 					<a class="button-cancel" href="index.php<?php echo '?__iv=' . rawurlencode($GLOBALS['_url']); ?>">Cancel</a>
 				</div>
-			</form>
 			<?php if(!empty($_POST['username']) || !empty($_POST['password'])): ?>
 				<p class="error"><b>Authentication Required: </b>The supplied credentials were unauthorized to access the specified content.</p>
 			<?php else: ?>
 				<p class="info"><b>Authentication Required: </b>Enter your username and password for "<?php echo htmlspecialchars($data['realm']); ?>" on <?php echo $GLOBALS['_url_parts']['host']; ?></p>
 			<?php endif; ?>
 		</div>
+			</form>
     <?php endif; ?>
 			
 			
