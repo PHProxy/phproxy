@@ -27,9 +27,12 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
 			margin: 50px auto;
 			padding: 55px;
 			background-color: #fff;
-			box-shadow: 0 1px 3px 0 rgba(0, 0, 0, .1);
+			box-shadow: 6px 6px 20px 0px rgba(0, 0, 0, 0.5);
 			font: 400 14px sans-serif;
 			text-align: center;
+		}
+		.main-auth-box {
+			box-shadow: 6px 6px 20px 0px rgba(255, 0, 0, 0.29)!important;
 		}
 		.form-title-row {
 			margin: 0 auto 40px auto;
@@ -187,6 +190,12 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
 			margin-top: 10px;
 		}
 		
+		.prx-opt-menu {
+			list-style: none;
+			text-align: initial;
+			padding-left: 4%;
+		}
+		
 		@media (max-width:600px) {
 			.main {
 				padding: 30px
@@ -219,6 +228,20 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
 				<div class="form-row">
 					<button class="button-submit" type="submit">Proxify</button>
 				</div>
+
+<br><br>
+				
+<div class="prx-opt-menu"><?php
+      
+      foreach ($GLOBALS['_flags'] as $flag_name => $flag_value)
+      {
+          if (!$GLOBALS['_frozen_flags'][$flag_name])
+          {
+              echo '<li class="option"><label><input type="checkbox" name="' . $GLOBALS['_config']['flags_var_name'] . '[' . $flag_name . ']"' . ($flag_value ? ' checked="checked"' : '') . ' />' . $GLOBALS['_labels'][$flag_name][1] . '</label></li>' . "\n";
+          }
+      }
+				?></div>
+
 			</form>
 
 <?php
@@ -275,10 +298,10 @@ switch ($data['category'])
 ?>
 
 		</div>
-		<?php endif; ?>
-    
-    <?php if($data['category'] == 'auth'): ?>
-		<div class="main">
+
+		<?php elseif($data['category'] == 'auth'): ?>
+
+		<div class="main main-auth-box">
 			<div class="form-title-row">
 				<h1 class="auth-header">Authentication Required</h1>
 			</div>
@@ -287,19 +310,24 @@ switch ($data['category'])
 				<div class="form-row">
 					<label>
 						<span>Enter username:</span>
-						<input type="username" name="username" placeholder="Username" required>
+						<input type="username" name="username" placeholder="Username">
 					</label>
 					<label>
 						<span>Enter password:</span>
-						<input type="password" name="password" placeholder="Password" required>
+						<input type="password" name="password" placeholder="Password">
 					</label>
 				</div>
 				
 				<div class="form-row">
-					<button class="button-submit" type="submit">Login</button> <a class="button-cancel" href="index.php<?php echo '?__iv=' . rawurlencode($GLOBALS['_url']); ?>">Cancel</a>
+					<button class="button-submit" type="submit">Login</button>
+					<a class="button-cancel" href="index.php<?php echo '?__iv=' . rawurlencode($GLOBALS['_url']); ?>">Cancel</a>
 				</div>
 			</form>
-			<p class="info"><b>Authentication Required: </b>Enter your username and password for "<?php echo htmlspecialchars($data['realm']); ?>" on <?php echo $GLOBALS['_url_parts']['host']; ?></p>
+			<?php if(!empty($_POST['username']) || !empty($_POST['password'])): ?>
+				<p class="error"><b>Authentication Required: </b>The supplied credentials were unauthorized to access the specified content.</p>
+			<?php else: ?>
+				<p class="info"><b>Authentication Required: </b>Enter your username and password for "<?php echo htmlspecialchars($data['realm']); ?>" on <?php echo $GLOBALS['_url_parts']['host']; ?></p>
+			<?php endif; ?>
 		</div>
     <?php endif; ?>
 			
