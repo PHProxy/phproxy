@@ -225,7 +225,7 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
 				<div class="form-row">
 					<label>
 						<span>Enter full URL:</span>
-						<input type="text" value="<?php echo !empty($_GET['__iv']) ? htmlspecialchars($_GET['__iv']) : (isset($GLOBALS['_url']) ? htmlspecialchars($GLOBALS['_url']) : '') ; ?>" name="<?php echo $GLOBALS['_config']['url_var_name'] ?>" value="<?php echo isset($GLOBALS['_url']) ? htmlspecialchars($GLOBALS['_url']) : '' ?>" placeholder="http://www.google.com" required>
+						<input type="text" name="<?php echo $GLOBALS['_config']['url_var_name'] ?>" value="<?php echo isset($GLOBALS['_url']) ? htmlspecialchars($GLOBALS['_url']) : !empty($_GET['__iv']) ? htmlspecialchars($_GET['__iv']) : (isset($GLOBALS['_url']) ? htmlspecialchars($GLOBALS['_url']) : ''); ?>" placeholder="http://www.google.com" required>
 					</label>
 				</div>
 				
