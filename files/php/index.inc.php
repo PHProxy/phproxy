@@ -211,6 +211,23 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
 		}
 	</style>
 		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<script>
+			function proxoptmenutoggle() {
+				var x = document.getElementById("proxoptmenu");
+				if (x.style.display === "none") {
+					x.style.display = "block";
+				} else {
+					x.style.display = "none";
+				}
+			}
+			function optbuttoninitialization() {
+				var x = document.getElementById("proxopt");
+				if (x.style.display === "none") {
+					x.style.display = "initial";
+				}
+			}
+			window.onload = optbuttoninitialization;
+		</script>
 	</head>
 	<body>
 
@@ -231,6 +248,7 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
 				
 				<div class="form-row">
 					<button class="button-submit" type="submit">Proxify</button>
+					<a class="button-cancel" href="#" id="proxopt" onclick="proxoptmenutoggle()"  style="display: none;">Options</a>
 				</div>
 
 <?php
@@ -288,7 +306,7 @@ switch ($data['category'])
 
 		</div>
 				<?php if(in_array(0, $GLOBALS['_frozen_flags'])): ?>
-				<div class="main">
+				<div id="proxoptmenu" class="main" style="display: none;">
 			<div class="form-title-row">
 				<h1>Proxy Options</h1>
 			</div>
