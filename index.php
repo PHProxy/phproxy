@@ -35,7 +35,7 @@ $_config            = array
                     );
 $_flags             = array
                     (
-                        'include_form'    => 1,
+                        'include_form'    => 0,
                         'remove_scripts'  => 1,
                         'accept_cookies'  => 1,
                         'show_images'     => 1,
@@ -43,7 +43,7 @@ $_flags             = array
                         'rotate13'        => 0,
                         'base64_encode'   => 1,
                         'strip_meta'      => 1,
-                        'strip_title'     => 0,
+                        'strip_title'     => 1,
                         'session_cookies' => 1
                     );
 $_frozen_flags      = array
@@ -132,6 +132,7 @@ $_bindip           = 'default';
 
 // Functions declaration
 require_once("./files/php/functions.inc.php");
+require_once("./files/php/prerequisites.inc.php");
 
 //
 // SET FLAGS
@@ -773,15 +774,17 @@ else
                         $rebuild = true;
                         $attrs['href'] = complete_url($attrs['href']);
                     }
-                    if (isset($attrs['data-inbound-url']))
-                    {
-                        $rebuild = true;
-                        $attrs['data-inbound-url'] = complete_url($attrs['data-inbound-url']);
-                    }
-                    if (isset($attrs['data-href-url']))
-                    {
-                        $rebuild = true;
-                        $attrs['data-href-url'] = complete_url($attrs['data-href-url']);
+                    if($_flags['remove_scripts']) {
+                        if (isset($attrs['data-inbound-url']))
+                        {
+                            $rebuild = true;
+                            $attrs['data-inbound-url'] = complete_url($attrs['data-inbound-url']);
+                        }
+                        if (isset($attrs['data-href-url']))
+                        {
+                            $rebuild = true;
+                            $attrs['data-href-url'] = complete_url($attrs['data-href-url']);
+                        }
                     }
                     break;
                 case 'link':
@@ -817,37 +820,39 @@ else
                         $rebuild = true;
                         $attrs['longdesc'] = complete_url($attrs['longdesc']);
                     }
-                    if (isset($attrs['srcset']))
-                    {
-                        $rebuild = true;
-                        preg_match('/^[^, ]+/', $attrs['srcset'], $img_src);
-                        if (!isset($attrs['src']) || strlen(file_get_contents($img_src[0])) >= 500)
+                    if($_flags['remove_scripts']) {
+                        if (isset($attrs['srcset']))
                         {
                             $rebuild = true;
-                            $attrs['src'] = complete_url($img_src[0]);
+                            preg_match('/^[^, ]+/', $attrs['srcset'], $img_src);
+                            if (!isset($attrs['src']) || strlen(file_get_contents($img_src[0])) >= 500)
+                            {
+                                $rebuild = true;
+                                $attrs['src'] = complete_url($img_src[0]);
+                            }
+                            $attrs['srcset'] = '';
                         }
-                        $attrs['srcset'] = '';
-                    }
-                    if (isset($attrs['data-srcset']))
-                    {
-                        $rebuild = true;
-                        preg_match('/^[^, ]+/', $attrs['data-srcset'], $img_src);
-                        if (!isset($attrs['src']) || strlen(file_get_contents($img_src[0])) >= 500)
+                        if (isset($attrs['data-srcset']))
                         {
                             $rebuild = true;
-                            $attrs['src'] = complete_url($img_src[0]);
+                            preg_match('/^[^, ]+/', $attrs['data-srcset'], $img_src);
+                            if (!isset($attrs['src']) || strlen(file_get_contents($img_src[0])) >= 500)
+                            {
+                                $rebuild = true;
+                                $attrs['src'] = complete_url($img_src[0]);
+                            }
+                            $attrs['data-srcset'] = '';
                         }
-                        $attrs['data-srcset'] = '';
-                    }
-                    if (isset($attrs['data-src']))
-                    {
-                        $rebuild = true;
-                        if (!isset($attrs['src']) || strlen(file_get_contents($attrs['src'])) <= 500)
+                        if (isset($attrs['data-src']))
                         {
                             $rebuild = true;
-                            $attrs['src'] = complete_url($attrs['data-src']);
+                            if (!isset($attrs['src']) || strlen(file_get_contents($attrs['src'])) <= 500)
+                            {
+                                $rebuild = true;
+                                $attrs['src'] = complete_url($attrs['data-src']);
+                            }
+                            $attrs['data-src'] = '';
                         }
-                        $attrs['data-src'] = '';
                     }
                     break;
                 case 'form':
@@ -1013,7 +1018,6 @@ else
         }
     }
 
-    include('./files/php/misc.php');
     if ($_flags['include_form'] && !isset($_GET['nf']))
     {
         $_url_form      = '<div style="width:100%;margin:0;text-align:center;border-bottom:1px solid #725554;color:#000000;background-color:#F2FDF3;font-size:12px;font-weight:bold;font-family:Bitstream Vera Sans,arial,sans-serif;padding:4px;">'
