@@ -820,39 +820,37 @@ else
                         $rebuild = true;
                         $attrs['longdesc'] = complete_url($attrs['longdesc']);
                     }
-                    if($_flags['remove_scripts']) {
-                        if (isset($attrs['srcset']))
+                    if (isset($attrs['srcset']))
+                    {
+                        $rebuild = true;
+                        preg_match('/^[^, ]+/', $attrs['srcset'], $img_src);
+                        if (!isset($attrs['src']) || strlen(file_get_contents($img_src[0])) >= 500)
                         {
                             $rebuild = true;
-                            preg_match('/^[^, ]+/', $attrs['srcset'], $img_src);
-                            if (!isset($attrs['src']) || strlen(file_get_contents($img_src[0])) >= 500)
-                            {
-                                $rebuild = true;
-                                $attrs['src'] = complete_url($img_src[0]);
-                            }
-                            $attrs['srcset'] = '';
+                            $attrs['src'] = complete_url($img_src[0]);
                         }
-                        if (isset($attrs['data-srcset']))
+                        $attrs['srcset'] = '';
+                    }
+                    if (isset($attrs['data-srcset']))
+                    {
+                        $rebuild = true;
+                        preg_match('/^[^, ]+/', $attrs['data-srcset'], $img_src);
+                        if (!isset($attrs['src']) || strlen(file_get_contents($img_src[0])) >= 500)
                         {
                             $rebuild = true;
-                            preg_match('/^[^, ]+/', $attrs['data-srcset'], $img_src);
-                            if (!isset($attrs['src']) || strlen(file_get_contents($img_src[0])) >= 500)
-                            {
-                                $rebuild = true;
-                                $attrs['src'] = complete_url($img_src[0]);
-                            }
-                            $attrs['data-srcset'] = '';
+                            $attrs['src'] = complete_url($img_src[0]);
                         }
-                        if (isset($attrs['data-src']))
+                        $attrs['data-srcset'] = '';
+                    }
+                    if (isset($attrs['data-src']))
+                    {
+                        $rebuild = true;
+                        if (!isset($attrs['src']) || strlen(file_get_contents($attrs['src'])) <= 500)
                         {
                             $rebuild = true;
-                            if (!isset($attrs['src']) || strlen(file_get_contents($attrs['src'])) <= 500)
-                            {
-                                $rebuild = true;
-                                $attrs['src'] = complete_url($attrs['data-src']);
-                            }
-                            $attrs['data-src'] = '';
+                            $attrs['src'] = complete_url($attrs['data-src']);
                         }
+                        $attrs['data-src'] = '';
                     }
                     break;
                 case 'form':
