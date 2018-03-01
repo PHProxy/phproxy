@@ -774,17 +774,15 @@ else
                         $rebuild = true;
                         $attrs['href'] = complete_url($attrs['href']);
                     }
-                    if($_flags['remove_scripts']) {
-                        if (isset($attrs['data-inbound-url']))
-                        {
-                            $rebuild = true;
-                            $attrs['data-inbound-url'] = complete_url($attrs['data-inbound-url']);
-                        }
-                        if (isset($attrs['data-href-url']))
-                        {
-                            $rebuild = true;
-                            $attrs['data-href-url'] = complete_url($attrs['data-href-url']);
-                        }
+                    if (isset($attrs['data-inbound-url']))
+                    {
+                        $rebuild = true;
+                        $attrs['data-inbound-url'] = complete_url($attrs['data-inbound-url']);
+                    }
+                    if (isset($attrs['data-href-url']))
+                    {
+                        $rebuild = true;
+                        $attrs['data-href-url'] = complete_url($attrs['data-href-url']);
                     }
                     break;
                 case 'link':
@@ -823,34 +821,51 @@ else
                     if (isset($attrs['srcset']))
                     {
                         $rebuild = true;
-                        preg_match('/^[^, ]+/', $attrs['srcset'], $img_src);
-                        if (!isset($attrs['src']) || strlen(file_get_contents($img_src[0])) >= 500)
-                        {
-                            $rebuild = true;
-                            $attrs['src'] = complete_url($img_src[0]);
+                        $str = preg_replace('/\s+/', ' ', $attrs['srcset']);
+                        $src_set_data = explode(',', $attrs['srcset']);
+                        foreach($src_set_data as $item) {
+                            $item = trim($item);
+                            $_data_ = explode(' ', $item);
+                            $src_set_data_2[] = $_data_;
                         }
-                        $attrs['srcset'] = '';
+                        foreach($src_set_data_2 as $item) {
+                            foreach($item as $item_2) {
+                                if($item_2 == $item[0]) {
+                                    $final .= complete_url($item_2);
+                                } else {
+                                    $final .= ' '.$item_2;
+                                }
+                            }
+                            $final = trim($final).', ';
+                        }
+                        $attrs['srcset'] = trim(trim($final), ',');
                     }
                     if (isset($attrs['data-srcset']))
                     {
                         $rebuild = true;
-                        preg_match('/^[^, ]+/', $attrs['data-srcset'], $img_src);
-                        if (!isset($attrs['src']) || strlen(file_get_contents($img_src[0])) >= 500)
-                        {
-                            $rebuild = true;
-                            $attrs['src'] = complete_url($img_src[0]);
+                        $str = preg_replace('/\s+/', ' ', $attrs['data-srcset']);
+                        $src_set_data = explode(',', $attrs['data-srcset']);
+                        foreach($src_set_data as $item) {
+                            $item = trim($item);
+                            $_data_ = explode(' ', $item);
+                            $src_set_data_2[] = $_data_;
                         }
-                        $attrs['data-srcset'] = '';
+                        foreach($src_set_data_2 as $item) {
+                            foreach($item as $item_2) {
+                                if($item_2 == $item[0]) {
+                                    $final .= complete_url($item_2);
+                                } else {
+                                    $final .= ' '.$item_2;
+                                }
+                            }
+                            $final = trim($final).', ';
+                        }
+                        $attrs['data-srcset'] = trim(trim($final), ',');
                     }
                     if (isset($attrs['data-src']))
                     {
                         $rebuild = true;
-                        if (!isset($attrs['src']) || strlen(file_get_contents($attrs['src'])) <= 500)
-                        {
-                            $rebuild = true;
-                            $attrs['src'] = complete_url($attrs['data-src']);
-                        }
-                        $attrs['data-src'] = '';
+                        $attrs['data-src'] = complete_url($attrs['data-src']);
                     }
                     break;
                 case 'form':
