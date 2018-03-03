@@ -839,6 +839,7 @@ else
                             $final = trim($final).', ';
                         }
                         $attrs['srcset'] = trim(trim($final), ',');
+                        unset($final, $src_set_data_2);
                     }
                     if (isset($attrs['data-srcset']))
                     {
@@ -861,6 +862,7 @@ else
                             $final = trim($final).', ';
                         }
                         $attrs['data-srcset'] = trim(trim($final), ',');
+                        unset($final, $src_set_data_2);
                     }
                     if (isset($attrs['data-src']))
                     {
