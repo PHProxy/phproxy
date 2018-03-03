@@ -741,11 +741,11 @@ else
         $_response_body = str_replace($matches[$i][0], $matches[$i][1]. proxify_css($matches[$i][2]) .$matches[$i][3], $_response_body);
     }
 
-    preg_match_all("#<\s*([a-zA-Z0-9\?-]+)(.*?(>|\/>))#S", $_response_body, $matches);
+    preg_match_all("#<\s*([a-zA-Z0-9\?-]+)(.*?(>|\/>))#s", $_response_body, $matches);
 
     for ($i = 0, $count_i = count($matches[0]); $i < $count_i; ++$i)
     {
-        if (!preg_match_all("#([a-zA-Z0-9:\-\/]+)\s*(?:=\s*(?:\"([^\">]*)\"?|'([^'>]*)'?|([^'\"\s>]*)))?#S", $matches[2][$i], $m, PREG_SET_ORDER))
+        if (!preg_match_all("#([a-zA-Z0-9:\-\/]+)\s*(?:=\s*(?:\"([^\">]*)\"?|'([^'>]*)'?|([^'\"\s>]*)))?#s", $matches[2][$i], $m, PREG_SET_ORDER))
         {
             continue;
         }
