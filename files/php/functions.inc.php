@@ -100,7 +100,7 @@ function url_parse($url, & $container)
 
 function complete_url($url, $proxify = true)
 {
-    $url = trim($url);
+    $url = html_entity_decode(trim($url));
     
     if ($url === '')
     {
