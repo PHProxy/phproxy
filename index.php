@@ -120,7 +120,7 @@ $_basic_auth_realm  = '';
 $_auth_creds        = array();
 $_response_body     = '';
 #$_user_agent        = isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : 'SamsungI8910/SymbianOS/6.1 Series60/3.0';
-$_user_agent        = 'SamsungI8910/SymbianOS/6.1 Series60/3.0';
+$_user_agent        = $_SERVER['HTTP_USER_AGENT'];
 
 # to bind to a specific ip set $_bindip to desired IP
 # if you do not need to set a specific port use 0 as default
@@ -741,7 +741,7 @@ else
         $_response_body = str_replace($matches[$i][0], $matches[$i][1]. proxify_css($matches[$i][2]) .$matches[$i][3], $_response_body);
     }
 
-    preg_match_all("#<\s*([a-zA-Z0-9\?-]+)([^>]+)>#S", $_response_body, $matches);
+    preg_match_all("#<\s*([a-zA-Z0-9\?-]+)(.*?(>|\/>))#S", $_response_body, $matches);
 
     for ($i = 0, $count_i = count($matches[0]); $i < $count_i; ++$i)
     {
@@ -866,6 +866,11 @@ else
                     {
                         $rebuild = true;
                         $attrs['data-src'] = complete_url($attrs['data-src']);
+                    }
+                    if (!isset($attrs['src']) && isset($attrs['data-src']))
+                    {
+                        $rebuild = true;
+                        $attrs['src'] = complete_url($attrs['data-src']);
                     }
                     break;
                 case 'form':
@@ -1021,13 +1026,15 @@ else
         if ($rebuild)
         {
             $new_tag = "<$tag";
+            $unpaired_slash = array_key_exists('/', $attrs) ? true : false ;
             foreach ($attrs as $name => $value)
             {
-                $delim = strpos($value, '"') && !strpos($value, "'") ? "'" : '"';
-                $new_tag .= ' ' . $name . ($value !== false ? '=' . $delim . $value . $delim : '');
+                if($name !== '/') {
+                    $delim = strpos($value, '"') && !strpos($value, "'") ? "'" : '"';
+                    $new_tag .= ' ' . $name . ($value !== false ? '=' . $delim . $value . $delim : '');
+                }
             }
-
-            $_response_body = str_replace($matches[0][$i], $new_tag . '>' . $extra_html, $_response_body);
+            $_response_body = str_replace($matches[0][$i], $new_tag . ($unpaired_slash ? '/>' : '>') . $extra_html, $_response_body);
         }
     }
 
