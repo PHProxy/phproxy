@@ -42,7 +42,7 @@ $_flags             = array
                         'show_referer'    => 1,
                         'rotate13'        => 0,
                         'base64_encode'   => 1,
-                        'strip_meta'      => 1,
+                        'strip_meta'      => 0,
                         'strip_title'     => 1,
                         'session_cookies' => 1
                     );
