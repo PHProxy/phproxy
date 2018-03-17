@@ -4,7 +4,7 @@
  *
  * PHProxy
  *
- * @author		Miglen
+ * @author		Miglen; PhoenixPeca
  * @copyright	2002-2007 A.A. (whitefyre)
  * @description Web based http proxy written on php.
  * @url	 		https://phproxy.github.io
@@ -23,10 +23,10 @@ error_reporting(0);
 
 $_config            = array
                     (
-                        'url_var_name'             => '_url',
-                        'flags_var_name'           => '_fl',
-                        'get_form_name'            => '____prgfn',
-                        'basic_auth_var_name'      => '____prba',
+                        'url_var_name'             => '_proxurl',
+                        'flags_var_name'           => '_proxfl',
+                        'get_form_name'            => '_proxgfn',
+                        'basic_auth_var_name'      => '_proxba',
                         'site_name'                => 'PHProxy',
                         'max_file_size'            => -1,
                         'allow_hotlinking'         => 0,
@@ -93,7 +93,7 @@ $_system            = array
                         'stripslashes' => get_magic_quotes_gpc()
                     );
 $_proxify           = array('text/html' => 1, 'application/xml+xhtml' => 1, 'application/xhtml+xml' => 1, 'text/css' => 1);
-$_version           = '0.5b2';
+$_version           = '1.0';
 $_http_host         = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : (isset($_SERVER['SERVER_NAME']) ? $_SERVER['SERVER_NAME'] : 'localhost');
 $_script_url        = 'http' . ((isset($_ENV['HTTPS']) && $_ENV['HTTPS'] == 'on') || $_SERVER['SERVER_PORT'] == 443 ? 's' : '') . '://' . $_http_host . ($_SERVER['SERVER_PORT'] != 80 && $_SERVER['SERVER_PORT'] != 443 ? ':' . $_SERVER['SERVER_PORT'] : '') . $_SERVER['PHP_SELF'];
 $_script_base       = substr($_script_url, 0, strrpos($_script_url, '/')+1);
