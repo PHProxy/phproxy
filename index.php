@@ -95,6 +95,11 @@ $_system            = array
 $_proxify           = array('text/html' => 1, 'application/xml+xhtml' => 1, 'application/xhtml+xml' => 1, 'text/css' => 1);
 $_version           = '1.0';
 $_http_host         = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : (isset($_SERVER['SERVER_NAME']) ? $_SERVER['SERVER_NAME'] : 'localhost');
+// https://stackoverflow.com/questions/4504831/serverhttp-host-contains-port-number-too
+$pos = strpos($_http_host, ':');
+if ($pos) {
+    $_http_host = substr($_http_host, 0, $pos);
+}
 $_script_url        = 'http' . ((isset($_ENV['HTTPS']) && $_ENV['HTTPS'] == 'on') || $_SERVER['SERVER_PORT'] == 443 ? 's' : '') . '://' . $_http_host . ($_SERVER['SERVER_PORT'] != 80 && $_SERVER['SERVER_PORT'] != 443 ? ':' . $_SERVER['SERVER_PORT'] : '') . $_SERVER['PHP_SELF'];
 $_script_base       = substr($_script_url, 0, strrpos($_script_url, '/')+1);
 $_url               = '';
@@ -879,7 +884,7 @@ else
                     if (isset($attrs['action']))
                     {
                         $rebuild = true;
-                        
+
                         if (trim($attrs['action']) === '' || trim($attrs['action']){0} === '#')
                         {
                             $attrs['action'] = $_url_parts['path'];
@@ -890,7 +895,7 @@ else
                             $attrs['action'] = complete_url($_url);
                             break;
                         }
-                        
+
                         $attrs['action'] = complete_url($attrs['action']);
                     } else {
                         $rebuild = true;
