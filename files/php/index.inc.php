@@ -1,4 +1,4 @@
-<?php 
+<?php
 if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
 {
     exit(0);
@@ -64,7 +64,7 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
 			border: 1px solid #dbdbdb;
 			margin-bottom: 10px;
 		}
-		
+
 		form input[type=email],
 		form input[type=username],
 		form input[type=password],
@@ -166,7 +166,7 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
 			border-right: 2px solid #c1294c;
 			text-align: left;
 		}
-		
+
 		p.info {
 			padding: 15px 20px;
 			line-height: 1.5;
@@ -180,15 +180,15 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
 			border-right: 2px solid #30cc2e;
 			text-align: left;
 		}
-		
+
 		.auth-header {
 			border-bottom: 2px solid #ff8100 !important;
 		}
-		
+
 		.auth {
 			margin-top: 10px;
 		}
-		
+
 		.prx-opt-menu {
 			list-style: none;
 			text-align: initial;
@@ -197,7 +197,7 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
 		.option label input {
 			margin-right: 10px;
 		}
-		
+
 		@media (max-width:600px) {
 			.main {
 				padding: 30px
@@ -209,25 +209,20 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
 				box-shadow: none;
 			}
 		}
+		#proxopttogl {
+			position: absolute;
+			width: 0;
+		}
+
+		#proxopttogl ~ #proxoptmenu {
+			display : none;
+		}
+
+		#proxopttogl:checked ~ #proxoptmenu {
+			display : block;
+		}
 	</style>
 		<meta name="viewport" content="width=device-width, initial-scale=1">
-		<script>
-			function proxoptmenutoggle() {
-				var x = document.getElementById("proxoptmenu");
-				if (x.style.display === "none") {
-					x.style.display = "block";
-				} else {
-					x.style.display = "none";
-				}
-			}
-			function optbuttoninitialization() {
-				var x = document.getElementById("proxopt");
-				if (x.style.display === "none") {
-					x.style.display = "initial";
-				}
-			}
-			window.onload = optbuttoninitialization;
-		</script>
 	</head>
 	<body>
 
@@ -238,17 +233,17 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
 				<h1><?php echo $GLOBALS['_config']['site_name'];?></h1>
 			</div>
 
-			
+
 				<div class="form-row">
 					<label>
 						<span>Enter full URL:</span>
 						<input type="text" name="<?php echo $GLOBALS['_config']['url_var_name'] ?>" value="<?php echo isset($GLOBALS['_url']) ? htmlspecialchars($GLOBALS['_url']) : !empty($_GET['__iv']) ? htmlspecialchars($_GET['__iv']) : (isset($GLOBALS['_url']) ? htmlspecialchars($GLOBALS['_url']) : ''); ?>" placeholder="https://www.phoenixpeca.xyz/" required>
 					</label>
 				</div>
-				
+
 				<div class="form-row">
 					<button class="button-submit" type="submit">Proxify</button>
-					<a class="button-cancel" href="#" id="proxopt" onclick="proxoptmenutoggle()"  style="display: none;">Options</a>
+					<label class="button-cancel" for="proxopttogl">Options</label>
 				</div>
 
 <?php
@@ -257,7 +252,7 @@ switch ($data['category'])
 {
     case 'error':
         echo '<p class="error">';
-        
+
         switch ($data['group'])
         {
             case 'url':
@@ -298,7 +293,7 @@ switch ($data['category'])
                 }
                 break;
         }
-        
+
         echo 'An error has occured while trying to browse through the proxy. <br />' . $message . '</p>';
         break;
 }
@@ -306,7 +301,8 @@ switch ($data['category'])
 
 		</div>
 				<?php if(in_array(0, $GLOBALS['_frozen_flags'])): ?>
-				<div id="proxoptmenu" class="main" style="display: none;">
+				<input type="checkbox" id="proxopttogl"/>
+				<div id="proxoptmenu" class="main">
 			<div class="form-title-row">
 				<h1>Proxy Options</h1>
 			</div>
@@ -345,7 +341,7 @@ foreach ($GLOBALS['_flags'] as $flag_name => $flag_value)
 						<input type="password" name="password" placeholder="Password">
 					</label>
 				</div>
-				
+
 				<div class="form-row">
 					<button class="button-submit" type="submit">Login</button>
 					<a class="button-cancel" href="index.php<?php echo '?__iv=' . rawurlencode($GLOBALS['_url']); ?>">Cancel</a>
@@ -358,7 +354,7 @@ foreach ($GLOBALS['_flags'] as $flag_name => $flag_value)
 		</div>
 			</form>
     <?php endif; ?>
-			
-			
+
+
 	</body>
 </html>
