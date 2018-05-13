@@ -3,8 +3,9 @@
 
 PHProxy is a web HTTP proxy written in PHP. It is designed to bypass proxy restrictions through a web interface very similar to the popular [CGIProxy](http://www.jmarshall.com/tools/cgiproxy/). The only thing that PHProxy needs is a web server with PHP installed (see Requirements below). Be aware though, that the sever has to be able to access those resources to deliver them to you.
 
-
 Originaly developed in [SourceForge](http://www.sourceforge.net/projects/poxy/) during 2002-2007 and then abandoned. This project needs to live and it's development it's continued here.
+
+Demo: https://www.phoenixpeca.xyz/gprox/
 
 ## Support
 
