@@ -4,7 +4,7 @@
  *
  * PHProxy
  *
- * @author		Miglen; PhoenixPeca
+ * @author		Miglen; PhoenixPeca; biojet1
  * @copyright	2002-2007 A.A. (whitefyre)
  * @description Web based http proxy written on php.
  * @url	 		https://phproxy.github.io
