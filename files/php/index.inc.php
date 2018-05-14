@@ -233,7 +233,7 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF'])) {
 			<div class="form-row">
 				<label>
 					<span>Enter full URL:</span>
-					<input type="text" name="<?php echo htmlspecialchars($GLOBALS['_config']['url_var_name']) ?>" value="<?php echo isset($_GET[$GLOBALS['_config']['url_var_name']]) ? htmlspecialchars($_GET[$GLOBALS['_config']['url_var_name']]) : (isset($_GET['__iv']) ? htmlspecialchars($_GET['__iv']) : ''); ?>" placeholder="https://www.phoenixpeca.xyz/" required="required"/>
+					<input type="text" name="<?php echo htmlspecialchars($GLOBALS['_config']['url_var_name']) ?>" value="<?php echo isset($_GET[$GLOBALS['_config']['url_var_name']]) ? htmlspecialchars(decode_url($_GET[$GLOBALS['_config']['url_var_name']])) : (isset($_GET['__iv']) ? htmlspecialchars($_GET['__iv']) : ''); ?>" placeholder="https://www.phoenixpeca.xyz/" required="required"/>
 				</label>
 			</div>
 			<div class="form-row">
