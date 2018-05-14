@@ -736,7 +736,8 @@ else
         'overlay'    => array('src', 'imagemap'),
         'q'          => array('cite'),
         'ul'         => array('src'),
-        'use'         => array('xlink:href')
+        'use'        => array('xlink:href'),
+        'source'     => array('srcset')
     );
 
     preg_match_all('#(<\s*style[^>]*>)(.*?)(<\s*/\s*style[^>]*>)#is', $_response_body, $matches, PREG_SET_ORDER);
@@ -1015,6 +1016,31 @@ else
                     {
                         $rebuild = true;
                         $attrs['longdesc'] = complete_url($attrs['longdesc']);
+                    }
+                    break;
+                case 'source':
+                    if (isset($attrs['srcset']))
+                    {
+                        $rebuild = true;
+                        $str = preg_replace('/\s+/', ' ', $attrs['srcset']);
+                        $src_set_data = explode(',', $attrs['srcset']);
+                        foreach($src_set_data as $item) {
+                            $item = trim($item);
+                            $_data_ = explode(' ', $item);
+                            $src_set_data_2[] = $_data_;
+                        }
+                        foreach($src_set_data_2 as $item) {
+                            foreach($item as $item_2) {
+                                if($item_2 == $item[0]) {
+                                    $final .= complete_url($item_2);
+                                } else {
+                                    $final .= ' '.$item_2;
+                                }
+                            }
+                            $final = trim($final).', ';
+                        }
+                        $attrs['srcset'] = trim(trim($final), ',');
+                        unset($final, $src_set_data_2);
                     }
                     break;
                 default:
