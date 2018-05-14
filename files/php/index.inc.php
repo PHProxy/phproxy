@@ -338,6 +338,6 @@ foreach ($GLOBALS['_flags'] as $flag_name => $flag_value) {
 		</div>
 		</form>
 	<?php endif;?>
-    <center><small>PHProxy v1.0</small><center><br><br>
+    <center><small>PHProxy v1.0.2</small><center><br><br>
 	</body>
 </html>
