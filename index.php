@@ -678,6 +678,11 @@ if ($_content_type == 'text/css')
 }
 else
 {
+    if(preg_match('/facebook\.com/', $_url_parts['host']) && $_content_type == 'application/xhtml+xml') {
+      $_content_type = 'text/html';
+      $_response_headers['content-type'] = $_content_type.'; charset=utf-8';
+    }
+
     if ($_flags['strip_title'])
     {
         $_response_body = preg_replace('#(<\s*title[^>]*>)(.*?)(<\s*/title[^>]*>)#is', '$1$3', $_response_body);
