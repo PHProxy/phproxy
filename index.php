@@ -4,7 +4,7 @@
  *
  * PHProxy
  *
- * @author		Miglen; PhoenixPeca; biojet1
+ * @author		Miglen; PhoenixPeca; Biojet1
  * @copyright	2002-2007 A.A. (whitefyre)
  * @description Web based http proxy written on php.
  * @url	 		https://phproxy.github.io
@@ -43,7 +43,7 @@ $_flags             = array
                         'rotate13'        => 0,
                         'base64_encode'   => 1,
                         'strip_meta'      => 0,
-                        'strip_title'     => 1,
+                        'strip_title'     => 0,
                         'session_cookies' => 1
                     );
 $_frozen_flags      = array
