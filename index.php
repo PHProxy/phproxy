@@ -137,7 +137,6 @@ $_bindip           = 'default';
 
 // Functions declaration
 require_once("./files/php/functions.inc.php");
-require_once("./files/php/prerequisites.inc.php");
 
 //
 // SET FLAGS
@@ -1077,6 +1076,7 @@ else
     }
 
     include('./files/php/misc.php');
+    require_once("./files/php/misc.override.php");
     if ($_flags['include_form'] && !isset($_GET['nf']))
     {
         $_url_form      = '<div style="width:100%;margin:0;text-align:center;border-bottom:1px solid #725554;color:#000000;background-color:#F2FDF3;font-size:12px;font-weight:bold;font-family:Bitstream Vera Sans,arial,sans-serif;padding:4px;">'
