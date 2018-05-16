@@ -222,7 +222,7 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF'])) {
 		}
 		</style>
 		<meta name="viewport" content="width=device-width, initial-scale=1"/>
-		<script src="index.js"></script>
+		<script src="./files/index.js"></script>
 	</head>
 	<body>
 	<?php if ($data['category'] != 'auth'): ?>
