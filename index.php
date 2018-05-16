@@ -126,7 +126,7 @@ $_auth_creds        = array();
 $_response_body     = '';
 //$_user_agent        = $_SERVER['HTTP_USER_AGENT'];
 //$_user_agent        = isset($_SERVER['HTTP_X_IORG_FBS']) ? 'SamsungI8910/SymbianOS/6.1 Series60/3.0' : $_SERVER['HTTP_USER_AGENT'];
-$user_agent         = 'Mozilla/5.0 (Linux; U; Android 1.6; en-us; PHProxy Build/'.$_version.')';
+$user_agent         = 'Mozilla/5.0 (Linux; U; Android 1.6; en-us; PHProxy Build/v1.0.2)';
 
 # to bind to a specific ip set $_bindip to desired IP
 # if you do not need to set a specific port use 0 as default
