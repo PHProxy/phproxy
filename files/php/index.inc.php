@@ -232,8 +232,10 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF'])) {
 				<h1><?php echo htmlspecialchars($GLOBALS['_config']['site_name']); ?></h1>
 			</div>
 			<div class="form-row">
-				<span>Enter full URL:</span>
-				<input type="text" name="<?php echo htmlspecialchars($GLOBALS['_config']['url_var_name']) ?>" value="<?php echo isset($_GET[$GLOBALS['_config']['url_var_name']]) ? htmlspecialchars(decode_url($_GET[$GLOBALS['_config']['url_var_name']])) : (isset($_GET['__iv']) ? htmlspecialchars($_GET['__iv']) : ''); ?>" placeholder="http://www.example.com/index.html?ref=PHProxy" required="required"/>
+				<label>
+					<span>Enter full URL:</span>
+					<input type="text" name="<?php echo htmlspecialchars($GLOBALS['_config']['url_var_name']) ?>" value="<?php echo isset($_GET[$GLOBALS['_config']['url_var_name']]) ? htmlspecialchars(decode_url($_GET[$GLOBALS['_config']['url_var_name']])) : (isset($_GET['__iv']) ? htmlspecialchars($_GET['__iv']) : ''); ?>" placeholder="http://www.example.com/index.html?ref=PHProxy" required="required"/>
+				</label>
 			</div>
 			<div class="form-row">
 				<button class="button-submit" type="submit">Proxify</button>
