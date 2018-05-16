@@ -4,13 +4,13 @@
  *
  * PHProxy
  *
- * @author		Miglen; PhoenixPeca; Biojet1
- * @copyright	2002-2007 A.A. (whitefyre)
- * @description Web based http proxy written on php.
- * @url	 		https://phproxy.github.io
- * @license		GNU GPL v3
- * @repo       	https://github.com/phproxy/phproxy
- * @docs		http://phproxy.readthedocs.org
+ * @author              Miglen; PhoenixPeca; Biojet1
+ * @copyright           2002-2007 A.A. (whitefyre)
+ * @description         Web based http proxy written on php.
+ * @url                 https://phproxy.github.io
+ * @license             GNU GPL v3
+ * @repo                https://github.com/phproxy/phproxy
+ * @docs                http://phproxy.readthedocs.org
  *
  */
 
