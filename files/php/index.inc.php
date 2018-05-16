@@ -292,7 +292,7 @@ switch ($data['category']) {
 				<h1>Options</h1>
 			</div>
 			<div class="prx-opt-menu">
-				<li id="newWin" class="option" style="display: none;"><label><input type="checkbox"/>Open a new window</label></li>
+				<li id="newWin" class="option" style="display: none;"><label><input type="checkbox"/>Open URL in a new window</label></li>
 <?php
 foreach ($GLOBALS['_flags'] as $flag_name => $flag_value) {
     if (!$GLOBALS['_frozen_flags'][$flag_name]) {
