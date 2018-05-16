@@ -222,19 +222,17 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF'])) {
 		}
 		</style>
 		<meta name="viewport" content="width=device-width, initial-scale=1"/>
+		<script src="index.js"></script>
 	</head>
 	<body>
 	<?php if ($data['category'] != 'auth'): ?>
-		<form method="post" action="<?php echo htmlspecialchars($_SERVER['PHP_SELF']); ?>">
+	<form method="post" action="<?php echo htmlspecialchars($_SERVER['PHP_SELF']); ?>">
 		<div class="main">
 			<div class="form-title-row">
 				<h1><?php echo htmlspecialchars($GLOBALS['_config']['site_name']); ?></h1>
 			</div>
 			<div class="form-row">
-				<label>
-					<span>Enter full URL:</span>
-					<input type="text" name="<?php echo htmlspecialchars($GLOBALS['_config']['url_var_name']) ?>" value="<?php echo isset($_GET[$GLOBALS['_config']['url_var_name']]) ? htmlspecialchars(decode_url($_GET[$GLOBALS['_config']['url_var_name']])) : (isset($_GET['__iv']) ? htmlspecialchars($_GET['__iv']) : ''); ?>" placeholder="https://www.phoenixpeca.xyz/" required="required"/>
-				</label>
+				<input type="text" name="<?php echo htmlspecialchars($GLOBALS['_config']['url_var_name']) ?>" value="<?php echo isset($_GET[$GLOBALS['_config']['url_var_name']]) ? htmlspecialchars(decode_url($_GET[$GLOBALS['_config']['url_var_name']])) : (isset($_GET['__iv']) ? htmlspecialchars($_GET['__iv']) : ''); ?>" placeholder="Enter full URL" required="required"/>
 			</div>
 			<div class="form-row">
 				<button class="button-submit" type="submit">Proxify</button>
@@ -287,14 +285,14 @@ switch ($data['category']) {
 }
 ?>
 		</div>
-				<?php if (in_array(0, $GLOBALS['_frozen_flags'])): ?>
-				<input type="checkbox" id="proxopttogl"/>
-				<div id="proxoptmenu" class="main">
+		<?php if (in_array(0, $GLOBALS['_frozen_flags'])): ?>
+<input type="checkbox" id="proxopttogl"/>
+		<div id="proxoptmenu" class="main">
 			<div class="form-title-row">
-				<h1>Proxy Options</h1>
+				<h1>Options</h1>
 			</div>
-
-				<div class="prx-opt-menu">
+			<div class="prx-opt-menu">
+				<li id="newWin" class="option" style="display: none;"><label><input type="checkbox"/>Open a new window</label></li>
 <?php
 foreach ($GLOBALS['_flags'] as $flag_name => $flag_value) {
     if (!$GLOBALS['_frozen_flags'][$flag_name]) {
@@ -304,9 +302,8 @@ foreach ($GLOBALS['_flags'] as $flag_name => $flag_value) {
 ?>
 				</div>
 			</div>
-				<?php endif;?>
-		</form>
-
+		<?php endif;?>
+</form>
 		<?php elseif ($data['category'] == 'auth'): ?>
 
 			<form class="auth" method="post" action="<?php echo htmlspecialchars($_SERVER['REQUEST_URI']); ?>">
@@ -336,8 +333,8 @@ foreach ($GLOBALS['_flags'] as $flag_name => $flag_value) {
 				<p class="info"><b>Authentication Required: </b>Enter your username and password for "<?php echo htmlspecialchars($data['realm']); ?>" on <?php echo htmlspecialchars($GLOBALS['_url_parts']['host']); ?></p>
 			<?php endif;?>
 		</div>
-		</form>
-	<?php endif;?>
-    <center><small>PHProxy v1.0.2</small><center><br><br>
+</form>
+<?php endif;?>
+<center><small><a href="https://github.com/PHProxy/phproxy" style="text-decoration: none;">PHProxy</a> v1.0.2</small><center><br><br>
 	</body>
 </html>
