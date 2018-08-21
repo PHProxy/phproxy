@@ -304,6 +304,7 @@ foreach ($GLOBALS['_flags'] as $flag_name => $flag_value) {
 }
 ?>
 				</div>
+				<a href="edit.php">MORE...</a>
 			</div>
 		<?php endif;?>
 </form>
@@ -338,6 +339,6 @@ foreach ($GLOBALS['_flags'] as $flag_name => $flag_value) {
 		</div>
 </form>
 <?php endif;?>
-<center><small><a href="https://github.com/PHProxy/phproxy" style="text-decoration: none;">PHProxy</a> <?=$GLOBALS['_version'];?></small><center><br><br>
+<center><small><a href="https://github.com/PHProxy/phproxy" style="text-decoration: none;">PHProxy</a> <?=$GLOBALS['_version'];?></small></center>
 	</body>
 </html>
