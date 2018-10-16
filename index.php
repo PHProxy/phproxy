@@ -552,7 +552,7 @@ do
             {
                 $domain = '.' . strtolower(str_replace('..', '.', trim($domain, '.')));
 
-                if ((!preg_match('#\Q' . $domain . '\E$#i', $_url_parts['host']) && $domain != '.' . $_url_parts['host']) || (substr_count($domain, '.') < 2 && $domain{0} == '.'))
+                if ((!preg_match('#\Q' . $domain . '\E$#i', $_url_parts['host']) && $domain != '.' . $_url_parts['host']) || (substr_count($domain, '.') < 2 && $domain[0] == '.'))
                 {
                     continue;
                 }
@@ -659,7 +659,7 @@ if (!isset($_proxify[$_content_type]))
         $data = fread($_socket, 8192);
         echo $data;
     }
-    while (isset($data{0}));
+    while (isset($data[0]));
 
     fclose($_socket);
     exit(0);
@@ -670,7 +670,7 @@ do
     $data = @fread($_socket, 8192); // silenced to avoid the "normal" warning by a faulty SSL connection
     $_response_body .= $data;
 }
-while (isset($data{0}));
+while (isset($data[0]));
 
 unset($data);
 fclose($_socket);
@@ -893,7 +893,7 @@ else
                     {
                         $rebuild = true;
 
-                        if (trim($attrs['action']) === '' || trim($attrs['action']){0} === '#')
+                        if (trim($attrs['action']) === '' || trim($attrs['action'])[0] === '#')
                         {
                             $attrs['action'] = $_url_parts['path'];
                         }
