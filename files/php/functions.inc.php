@@ -110,7 +110,7 @@ function complete_url($url, $proxify = true)
     $GLOBALS['_base']['host']   = empty($GLOBALS['_base']['host']) ? $BASE_ORIGIN['host'] : $GLOBALS['_base']['host'];
 
     if ($sep_pos === false || $sep_pos > 5) {
-        switch ($url{0}) {
+        switch ($url[0]) {
         case '/':
             $url = substr($url, 0, 2) === '//' ? $GLOBALS['_base']['scheme'] . ':' . $url : $GLOBALS['_base']['scheme'] . '://' . $GLOBALS['_base']['host'] . $GLOBALS['_base']['port_ext'] . $url;
             break;
