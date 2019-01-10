@@ -882,6 +882,11 @@ else
                         $rebuild = true;
                         $attrs['data-src'] = complete_url($attrs['data-src']);
                     }
+                    if (isset($attrs['data-cfsrc']))
+                    {
+                        $rebuild = true;
+                        $attrs['data-cfsrc'] = complete_url($attrs['data-cfsrc']);
+                    }
                     if (!isset($attrs['src']) && isset($attrs['data-src']))
                     {
                         $rebuild = true;
