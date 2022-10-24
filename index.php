@@ -1,5 +1,7 @@
 <?php
 
+
+
 /**
  *
  * PHProxy
@@ -90,7 +92,7 @@ $_system            = array
                         'ssl'          => extension_loaded('openssl') && version_compare(PHP_VERSION, '4.3.0', '>='),
                         'uploads'      => ini_get('file_uploads'),
                         'gzip'         => extension_loaded('zlib') && !ini_get('zlib.output_compression'),
-                        'stripslashes' => get_magic_quotes_gpc()
+                        'stripslashes' => false
                     );
 $_proxify           = array('text/html' => 1, 'application/xml+xhtml' => 1, 'application/xhtml+xml' => 1, 'text/css' => 1);
 $_version           = 'v1.1.1';
@@ -124,7 +126,9 @@ $_basic_auth_header = '';
 $_basic_auth_realm  = '';
 $_auth_creds        = array();
 $_response_body     = '';
-$pos = $_COOKIE['userAgent'];
+if (isset($_COOKIE['userAgent'])) {
+    $pos = $_COOKIE['userAgent'];
+}
 if(!isset($pos) || $pos == ""){ // empty means old method
   $_user_agent = isset($_SERVER['HTTP_X_IORG_FBS']) ? 'SamsungI8910/SymbianOS/6.1 PHProxy/'.$_version : $_SERVER['HTTP_USER_AGENT'];
 }else if($pos == '.'){ // dot means use the browsers UA
@@ -177,7 +181,9 @@ if ($_iflags !== '')
 
     foreach ($_flags as $flag_name => $flag_value)
     {
-        $_flags[$flag_name] = $_frozen_flags[$flag_name] ? $flag_value : (int)(bool)$_iflags{$i};
+        if ($_frozen_flags[$flag_name] != 0) {
+            $_flags[$flag_name] = $flag_value;
+        }
         $i++;
     }
 }
@@ -301,7 +307,7 @@ if (!$_config['allow_hotlinking'] && isset($_SERVER['HTTP_REFERER']))
 
     foreach ($_hotlink_domains as $host)
     {
-        if (preg_match('#^https?\:\/\/(www)?\Q' . $host  . '\E(\/|\:|$)#i', trim($_SERVER['HTTP_REFERER'])))
+        if (preg_match('#^https?\:\/\/(www)?\Q' . $host  . '\E(\/|\:|$)#i', trim((string) $_SERVER['HTTP_REFERER'])))
         {
             $is_hotlinking = false;
             break;
@@ -430,7 +436,7 @@ do
     {
         $_request_headers  .= "Authorization: Basic {$_auth_creds[$_basic_auth_realm]}\r\n";
     }
-    else if (list($_basic_auth_realm, $_basic_auth_header) = each($_auth_creds))
+    else if (isset($_auth_creds[0]) && list($_basic_auth_realm, $_basic_auth_header) = $_auth_creds[0])
     {
         $_request_headers .= "Authorization: Basic {$_basic_auth_header}\r\n";
     }
@@ -506,8 +512,8 @@ do
     while (strspn($line, "\r\n") !== strlen($line))
     {
         @list($name, $value) = explode(':', $line, 2);
-        $name = trim($name);
-        $_response_headers[strtolower($name)][] = trim($value);
+        $name = trim((string) $name);
+        $_response_headers[strtolower($name)][] = trim((string) $value);
         $_response_keys[strtolower($name)] = $name;
         $line = fgets($_socket, 8192);
     }
@@ -550,7 +556,7 @@ do
             }
             else
             {
-                $domain = '.' . strtolower(str_replace('..', '.', trim($domain, '.')));
+                $domain = '.' . strtolower(str_replace('..', '.', trim((string) $domain, '.')));
 
                 if ((!preg_match('#\Q' . $domain . '\E$#i', $_url_parts['host']) && $domain != '.' . $_url_parts['host']) || (substr_count($domain, '.') < 2 && $domain[0] == '.'))
                 {
