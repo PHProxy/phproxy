@@ -14,8 +14,8 @@
  *
  */
 
-
-error_reporting(0);
+/* PRODUCTIVE: */ error_reporting(0);
+//* DEVELOP: */ error_reporting(E_ALL | E_STRICT);
 
 //
 // CONFIGURABLE OPTIONS
@@ -130,7 +130,7 @@ $_basic_auth_header = '';
 $_basic_auth_realm  = '';
 $_auth_creds        = [];
 $_response_body     = '';
-$pos = $_COOKIE['userAgent'];
+$pos = isset($_COOKIE['userAgent']) ? $_COOKIE['userAgent'] : null;
 if(!isset($pos) || $pos == ""){ // empty means old method
   $_user_agent = isset($_SERVER['HTTP_X_IORG_FBS']) ? 'SamsungI8910/SymbianOS/6.1 PHProxy/'.$_version : $_SERVER['HTTP_USER_AGENT'];
 }else if($pos == '.'){ // dot means use the browsers UA
@@ -436,8 +436,12 @@ do
     {
         $_request_headers  .= "Authorization: Basic {$_auth_creds[$_basic_auth_realm]}\r\n";
     }
-    else if (list($_basic_auth_realm, $_basic_auth_header) = each($_auth_creds))
+    else if (count($_auth_creds) >= 2)
     {
+        $_dummy = array_values($_auth_creds);
+        $_basic_auth_realm = $dummy[0];
+        $_basic_auth_header = $dummy[1];
+
         $_request_headers .= "Authorization: Basic {$_basic_auth_header}\r\n";
     }
     if ($_request_method == 'POST')
