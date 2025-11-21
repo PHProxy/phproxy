@@ -203,7 +203,7 @@ if ($_config['compress_output'] && $_system['gzip'])
 
 if ($_system['stripslashes'])
 {
-    function _stripslashes($value)
+    function _stripslashes(mixed $value): mixed
     {
         return is_array($value) ? array_map('_stripslashes', $value) : (is_string($value) ? stripslashes($value) : $value);
     }
