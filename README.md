@@ -57,6 +57,21 @@ any URLs so that they point back to the script. Of course, there is more
 to it than this, but if you would like to know more in
 detail, view the source code.
 
+### URL forms
+
+PHProxy accepts the target URL in three forms:
+
+| Form | Example |
+| --- | --- |
+| Query (default, used by the entry form and outbound link rewriting) | `phproxy.example/index.php?_proxurl=<encoded>` |
+| Path via `index.php` (no rewrite module required) | `phproxy.example/index.php/https://example.com/` |
+| Bare path (requires Apache `mod_rewrite` + `AllowOverride All`) | `phproxy.example/https://example.com/` |
+
+The bare-path form is enabled by the shipped `.htaccess`. The Docker
+image is configured for it out of the box; on a standalone Apache
+install make sure `mod_rewrite` is loaded and `AllowOverride All` is
+set for the document root.
+
 ## Bugs and Limitations
 
 PHP is restrictive by nature, and as such, some problems arise that 
@@ -113,3 +128,13 @@ JavaScript, or token-bound TLS (e.g. Google, GitHub, most large social
 networks) will not work through PHProxy. The proxy rewrites HTML/CSS URLs
 via regex — it does not run a headless browser, solve CAPTCHAs, or evaluate
 client-side scripts. This is a fundamental design limitation, not a bug.
+
+## Anonymity
+
+PHProxy is anonymous-by-default. The outbound request headers are built
+from a known-safe whitelist (method, path, Host, User-Agent, Accept,
+optional Referer, Cookie, Authorization, plus POST body headers). The
+proxy never forwards `X-Forwarded-For`, `X-Real-IP`, `Via`, or `Forwarded`
+to the upstream — targets see this server's IP only. If you want to also
+suppress the client User-Agent, use the settings page (`edit.php`) to pin
+it to a generic value or to `-` (omit entirely).
