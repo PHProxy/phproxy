@@ -1,140 +1,200 @@
-## PHProxy
-[![AUR](https://img.shields.io/badge/style-GPL--3.0-blue.svg?style=flat&label=License)](https://github.com/azetrix/ShortLink/blob/master/LICENSE)
+# PHProxy
 
-PHProxy is a web HTTP proxy written in PHP. It is designed to bypass proxy restrictions through a web interface very similar to the popular [CGIProxy](http://www.jmarshall.com/tools/cgiproxy/). The only thing that PHProxy needs is a web server with PHP installed (see Requirements below). Be aware though, that the sever has to be able to access those resources to deliver them to you.
+[![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](LICENSE.md)
+[![PHP](https://img.shields.io/badge/PHP-%3E%3D%208.1-777bb3.svg)](https://www.php.net/)
+[![Single file](https://img.shields.io/badge/single--file-index.php-success.svg)](index.php)
 
-Originaly developed in [SourceForge](http://www.sourceforge.net/projects/poxy/) during 2002-2007 and then abandoned. This project needs to live and it's development is continued here.
+A small, fast, self-contained web proxy in **one PHP file**. Drop `index.php`
+into any PHP 8.1+ web root and it just works — no Composer, no dependencies,
+no `vendor/`, no build step. Rename it to `proxy.php` if you like; the script
+self-references.
 
-## Support
+Originally developed on [SourceForge](http://www.sourceforge.net/projects/poxy/)
+2002–2007, then abandoned. Revived and modernised here for PHP 8.5 with a
+new HTML5 interface, encrypted-URL mode, full cookie/header management, and
+an inline settings panel injected into proxied pages.
 
- * Create an issue: https://github.com/PHProxy/PHProxy/issues/new
+## Highlights
 
-## License
+- **Single file.** `index.php` is the whole product. No `files/` directory,
+  no includes, no autoloader.
+- **Encrypted address bar by default.** Each URL is AES-CTR encrypted with a
+  rotating session seed (128/192/256-bit, configurable). Logs / browser
+  history / referers become useless once the seed rotates.
+- **Inline settings panel** on every proxied page — a full-viewport overlay
+  with **Options**, **Cookies**, **Headers**, and a **Trace** tab showing the
+  exact HTTP request and response headers for the current URL.
+- **Full cookie management** — host, path, expiry, Secure, HttpOnly, SameSite,
+  all per-cookie. Add, edit, delete, switch between decoded / raw value
+  display.
+- **Custom outbound headers** — any `Name: Value` you want forwarded to the
+  upstream. Plus a User-Agent picker with modern presets.
+- **Privacy options** — strip tracking params (utm_*, fbclid, gclid, …),
+  block third-party resources, block iframes / web fonts / media, send
+  `DNT: 1` and `Sec-GPC: 1`, strip `<title>` / `<meta>`.
+- **HTML5 UI** with light & dark themes (manual toggle + `prefers-color-scheme`).
+- **Three URL forms** — `?_proxurl=…`, `index.php/<url>`, or bare-path
+  `phproxy.example/https://target/` with `mod_rewrite`.
+- **PHP 8.5 clean** — zero deprecations under `E_ALL`. CI lints on 8.1 + 8.5.
 
-This source code is released under the GPL.
-A copy of the license is provided in this package in the filename `LICENSE.md`.
+## What it is
 
-## Requirements
+PHProxy is a web HTTP/HTTPS proxy you visit in a browser. You type a URL,
+the server fetches it on your behalf, rewrites links in the response so
+they route back through the proxy, and serves the result. Conceptually
+similar to [CGIProxy](http://www.jmarshall.com/tools/cgiproxy/) or the
+discontinued Glype, only smaller and more modern.
 
- * PHP >= 8.1 (tested on 8.5)
- * `fsockopen()` not disabled
- * OpenSSL extension for HTTPS targets
- * Zlib extension for output compression (optional)
- * `file_uploads` turned On for HTTP file uploads
+It runs anywhere PHP runs. The server needs to be able to reach the target
+sites — your access to PHProxy doesn't change.
 
-## Installation
+## What it isn't
 
-### Option A — Docker (recommended)
+PHProxy is a **regex-based HTML rewriter**. It does not run a headless
+browser, evaluate JavaScript, solve CAPTCHAs, or negotiate token-bound TLS.
 
-```
+Modern JS-heavy sites that gate access behind Cloudflare challenges or
+require live client-side script execution (Google search, GitHub UI, most
+social networks, modern SaaS apps) will not work through PHProxy — that's
+a fundamental limitation of the architecture, not a bug. Use a real
+headless-browser-based proxy for those.
+
+## Install
+
+### Docker (recommended)
+
+```sh
 git clone https://github.com/PHProxy/phproxy.git
 cd phproxy
 docker compose up -d
 ```
 
-Open http://localhost:8080/ — that's it.
+Open <http://localhost:8080/> — done.
 
-The shipped `docker-compose.yml` bind-mounts the source for development.
-For a production deployment, remove the `volumes:` block so the image runs
-the baked-in code. The container is based on the official `php:8.5-apache`
-image and needs no extra extensions.
+The image is based on the official `php:8.5-apache` and needs no extra
+extensions. The shipped `docker-compose.yml` bind-mounts the source for
+development; for production, remove the `volumes:` block so the container
+runs the baked-in copy of `index.php`.
 
-### Option B — Standalone
+### Bash (any PHP 8.1+ host)
 
-Copy the files of the repository in your public web server folder or to a
-directory of your liking (preferably in its own directory).
-
-```
-cd /var/www/html/
-git clone https://github.com/PHProxy/phproxy.git
+```sh
+cd /var/www/html
+curl -O https://raw.githubusercontent.com/PHProxy/phproxy/master/index.php
+curl -O https://raw.githubusercontent.com/PHProxy/phproxy/master/.htaccess
 ```
 
-## How it Works
+That's it — `index.php` is the entire script. The `.htaccess` enables the
+bare-path URL form (`phproxy.example/https://target/`); it's optional and
+the script works without it.
 
-You simply supply a URL to the form and click Browse. The script then 
-accesses that URL, and if it has any HTML contents, it modifies 
-any URLs so that they point back to the script. Of course, there is more
-to it than this, but if you would like to know more in
-detail, view the source code.
+Visit `http://your-host/` (or wherever you dropped it).
 
-### URL forms
+### Standalone shared hosting
 
-PHProxy accepts the target URL in three forms:
+If you don't have shell access, download
+[`index.php`](https://raw.githubusercontent.com/PHProxy/phproxy/master/index.php)
+and (optionally) [`.htaccess`](https://raw.githubusercontent.com/PHProxy/phproxy/master/.htaccess)
+and upload both via FTP / your host's file manager to the web root.
 
-| Form | Example |
-| --- | --- |
-| Query (default, used by the entry form and outbound link rewriting) | `phproxy.example/index.php?_proxurl=<encoded>` |
-| Path via `index.php` (no rewrite module required) | `phproxy.example/index.php/https://example.com/` |
-| Bare path (requires Apache `mod_rewrite` + `AllowOverride All`) | `phproxy.example/https://example.com/` |
+### Rename to `proxy.php` (or anything else)
 
-The bare-path form is enabled by the shipped `.htaccess`. The Docker
-image is configured for it out of the box; on a standalone Apache
-install make sure `mod_rewrite` is loaded and `AllowOverride All` is
-set for the document root.
+`index.php` self-references via `$_SERVER['PHP_SELF']`. Just rename the file
+— forms, redirects and asset URLs all stay correct.
 
-## Bugs and Limitations
+If you keep the `.htaccess`, edit it to point the rewrite rules at the new
+filename.
 
-PHP is restrictive by nature, and as such, some problems arise that 
-would have not if this project were otherwise coded in another programming
-language. The first example of this is the dots in incoming variable names 
-from POST and GET methods. In a normal programming language, this wouldn't be
-a problem as these variables could be accessed normally as they are 
-supplied, with dots included. In PHP, however, dots in GET, POST, and
-COOKIE variable names are magically transformed into underscores
-because of `register_globals`. Things like Yahoo! Mail which has dots
-in variable names will not work. There's no easy way around this, but
-luckily, I have provided the solutions right here:
+```sh
+mv index.php proxy.php
+sed -i 's|index\.php|proxy.php|g' .htaccess
+```
 
-  1. I've already taken care of cookies by manually transforming
-     the underscores manually into dots when needed.
-  2. For GET variables, this shouldn't be a huge problem since the URLs
-     are URL-encoded into the url_var_name. The only time this should be
-     an issue is when a GET form uses dots in input names, and this could
-     be recitified by using $_SERVER['QUERY_STRING'], and parsing that
-     variable. But this, luckily, doesn't happen too often.
-  3. As for POST data, one solution is to use $HTTP_RAW_POST_DATA. But then,
-     this variable might not be available in certain PHP configurations,
-     and it would need further parsing, and it still doesn't account 
-     for uploaded FILES. This is extremely impractical and ugly.
+## Requirements
 
-The best thing you could do if you have enough control over your Web server
-and can compile custom builds of PHP is to delete a single line in a PHP source
-code file called "php_variables.c" located in the "main" directory.
-The function in question is called "php_register_variable_ex". I've only checked
-this with PHP v4.4.4 and the exact line to delete is 117th line which basically
-consists of this:
+- PHP **≥ 8.1**, tested on **8.5**.
+- `fsockopen()` not disabled. Most shared hosts allow it.
+- `openssl` extension for HTTPS targets and for the encrypted-URL mode (both
+  are on by default in mainstream PHP builds).
+- `zlib` extension for output compression — optional.
+- `file_uploads = On` if you want POSTed file uploads to flow through.
+- Apache `mod_rewrite` + `AllowOverride All` for the bare-path URL form —
+  optional. The Docker image is preconfigured.
 
-			case '.':
+## URL forms
 
-Now just compile and install PHP and everything should be fine. Just make
-sure that you have register_globals off or something might get messed up.
+PHProxy accepts the target URL in three shapes:
 
-Another problem facing many Web proxies is support for JavaScript.
-The best thing you could do right now is to have the JavaScript
-disabled on your browsing options as most sites degrade gracefully,
-such as Gmail.
+| Form | Example | Needs `mod_rewrite`? |
+| --- | --- | --- |
+| Query (default) | `https://proxy.example/?_proxurl=<encoded>` | no |
+| Path via `index.php` | `https://proxy.example/index.php/https://target/` | no |
+| Bare path | `https://proxy.example/https://target/` | yes |
 
-A third limitation for Web proxies is content accessed from within proxied
-Flash and Java applications and such. Since the proxy script doesn't have access
-to the source code of these applications, the links which they may decide
-to stream or access will not be proxified. There's no easy solution for this
-right now.
-
-PHProxy also doesn't support FTP. This may or may not be introduced 
-in future releases, but there are no current plans for FTP support.
-
-Modern sites that gate access behind Cloudflare challenge pages, mandatory
-JavaScript, or token-bound TLS (e.g. Google, GitHub, most large social
-networks) will not work through PHProxy. The proxy rewrites HTML/CSS URLs
-via regex — it does not run a headless browser, solve CAPTCHAs, or evaluate
-client-side scripts. This is a fundamental design limitation, not a bug.
+The first two work everywhere. The bare-path form is the prettiest but
+needs Apache `mod_rewrite` and the shipped `.htaccess` to be honoured
+(`AllowOverride All` in your vhost config).
 
 ## Anonymity
 
 PHProxy is anonymous-by-default. The outbound request headers are built
-from a known-safe whitelist (method, path, Host, User-Agent, Accept,
-optional Referer, Cookie, Authorization, plus POST body headers). The
-proxy never forwards `X-Forwarded-For`, `X-Real-IP`, `Via`, or `Forwarded`
-to the upstream — targets see this server's IP only. If you want to also
-suppress the client User-Agent, use the settings page (`edit.php`) to pin
-it to a generic value or to `-` (omit entirely).
+from a known-safe whitelist (method, path, `Host`, `User-Agent`, `Accept`,
+optional `Referer`, `Cookie`, `Authorization`, plus POST-body headers).
+The proxy never forwards `X-Forwarded-For`, `X-Real-IP`, `Via`, or
+`Forwarded` to the upstream — targets see this server's IP only.
+
+For extra cover, the **Encrypted** URL-encoding mode (on by default) wraps
+each URL in an AES-CTR ciphertext keyed off a random per-session seed
+stored in a 1-hour cookie. Once the seed rotates, any URL that ended up
+in an access log, browser history, or `Referer` header becomes unusable
+— the ciphertext is mathematically meaningless without the now-gone key.
+
+Both the seed lifetime and the key length (AES-128 / 192 / 256) are
+configurable from the Options → Address bar tab, along with a **Rotate
+now** button for immediate re-keying.
+
+If you also want to hide the client `User-Agent`, set it to `-` in the
+Headers tab — no `User-Agent` header gets forwarded.
+
+## Configuration
+
+All options are toggleable per-session via the inline panel (gear icon in
+the top bar of every proxied page). They persist in cookies. Defaults are
+sane; you typically don't need to touch them.
+
+For server-side defaults, the top of `index.php` has a `$_config` /
+`$_flags` / `$_frozen_flags` block — edit and you're done. Freezing a flag
+in `$_frozen_flags` removes it from the UI entirely.
+
+## Bugs and limitations
+
+PHProxy inherits a few historical quirks from PHP's request handling, most
+notably the legacy dot→underscore conversion on incoming variable names
+(a `register_globals`-era footgun). Cookie names are restored to dotted
+form internally; URL query parameters are URL-encoded into a single carrier
+variable so this rarely matters in practice.
+
+Things that simply will not work, ever, by design:
+
+- **JavaScript-heavy sites.** PHProxy doesn't run JS. Sites that build
+  their UI client-side (everything from Gmail to most React/Vue apps) will
+  partially work at best.
+- **Cloudflare-gated / CAPTCHA-protected sites.** No browser fingerprint,
+  no challenge-solving.
+- **Token-bound TLS** (browser-only TLS extensions some sites require).
+- **FTP / SFTP / WebDAV.** HTTP/HTTPS only.
+- **WebSockets, WebRTC, Server-Sent Events.** Synchronous fetch only.
+- **Flash, Java applets, plug-ins.** Content fetched from inside these
+  is invisible to the URL rewriter.
+
+## Support
+
+- File issues: <https://github.com/PHProxy/phproxy/issues>
+- Pull requests: <https://github.com/PHProxy/phproxy/pulls>
+
+## License
+
+GNU GPL v3 — see [`LICENSE.md`](LICENSE.md).
+
+Original authorship: A.A. (whitefyre), 2002–2007. Revival and modernisation
+(2025–2026): see the commit history.

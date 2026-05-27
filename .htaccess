@@ -1,13 +1,20 @@
-# PHProxy path-style routing (#24)
-# Forward /http(s):/target/... to index.php with PATH_INFO set.
+# PHProxy
+#
+# If you renamed index.php to proxy.php (or anything else), change the
+# `index.php` references below to match.
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
+
+    # Backward compat: the old settings page lived at edit.php. Bounce
+    # to the entry form (the Headers tab is its replacement).
+    RewriteRule ^edit\.php$ index.php [L,QSA]
 
     # Don't rewrite real files or directories
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
 
-    # /http(s):/target/... -> /index.php/http(s):/target/...
+    # Path-style URLs (#24):
+    #   /http(s):/target/... -> /index.php/http(s):/target/...
     RewriteRule ^(https?:/.*)$ index.php/$1 [L,QSA]
 </IfModule>
