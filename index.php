@@ -1330,20 +1330,70 @@ else
     require_once "./files/php/misc.override.php";
     if ($_flags['include_form'] && !isset($_GET['nf']))
     {
-        // PHProxy top bar injected into proxied pages.
-        // Scoped inline styles only (the host page's CSS can't bleed into it).
-        $_bar_style = "all:initial;display:block;position:sticky;top:0;z-index:2147483647;box-sizing:border-box;width:100%;margin:0;padding:8px 12px;background:#0f172a;color:#f1f5f9;font:13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;border-bottom:1px solid #334155;";
-        $_bar_input = "box-sizing:border-box;flex:1 1 320px;min-width:0;padding:6px 10px;background:#1e293b;color:#f1f5f9;border:1px solid #334155;border-radius:6px;font:inherit;";
-        $_bar_btn   = "padding:6px 14px;background:#3b82f6;color:#fff;border:0;border-radius:6px;font:600 13px inherit;cursor:pointer;text-decoration:none;";
-        $_bar_link  = "color:#93c5fd;text-decoration:none;margin-left:8px;font:inherit;";
+        // PHProxy top bar injected into proxied pages. id-scoped stylesheet
+        // with light + dark variants; inline JS reads localStorage and
+        // prefers-color-scheme so the bar follows the theme the user picked
+        // on the entry form. `all:initial` keeps the host page's CSS from
+        // bleeding in.
+        $_url_safe       = htmlspecialchars($_url, ENT_QUOTES);
+        $_up_url         = $_script_url . '?' . $_config['url_var_name'] . '=' . encode_url($_url_parts['prev_dir']);
+        $_up_url_safe    = htmlspecialchars($_up_url, ENT_QUOTES);
+        $_home_safe      = htmlspecialchars($_script_base, ENT_QUOTES);
+        $_action_safe    = htmlspecialchars($_script_url, ENT_QUOTES);
+        $_url_var_safe   = htmlspecialchars($_config['url_var_name']);
 
-        $_url_form  = '<div style="' . $_bar_style . '">'
-                    . '<form method="post" action="' . $_script_url . '" style="all:initial;display:flex;flex-wrap:wrap;gap:8px;align-items:center;font:inherit;color:inherit;">'
-                    . '<input id="____' . $_config['url_var_name'] . '" type="text" name="' . $_config['url_var_name'] . '" value="' . htmlspecialchars($_url) . '" style="' . $_bar_input . '"/>'
-                    . '<button type="submit" name="go" style="' . $_bar_btn . '">Go</button>'
-                    . '<a href="' . $_script_url . '?' . $_config['url_var_name'] . '=' . encode_url($_url_parts['prev_dir']) . '" style="' . $_bar_link . '">Up</a>'
-                    . '<a href="' . $_script_base . '" style="' . $_bar_link . '">Home</a>'
-                    . '</form></div>';
+        $_bar_css = <<<CSS
+#phproxy-bar{all:initial;display:block;position:sticky;top:0;z-index:2147483647;box-sizing:border-box;width:100%;margin:0;padding:8px 12px;background:#ffffff;color:#0f172a;font:13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;border-bottom:1px solid #e2e6ec;}
+#phproxy-bar.dark{background:#0f172a;color:#f1f5f9;border-bottom-color:#334155;}
+#phproxy-bar *{box-sizing:border-box;font:inherit;color:inherit;}
+#phproxy-bar .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+#phproxy-bar input.url{flex:1 1 320px;min-width:0;padding:6px 10px;background:#f8fafc;color:#0f172a;border:1px solid #e2e6ec;border-radius:6px;}
+#phproxy-bar.dark input.url{background:#1e293b;color:#f1f5f9;border-color:#334155;}
+#phproxy-bar input.url:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.18);}
+#phproxy-bar.dark input.url:focus{border-color:#60a5fa;box-shadow:0 0 0 3px rgba(96,165,250,.25);}
+#phproxy-bar button.go{padding:6px 14px;background:#2563eb;color:#fff;border:0;border-radius:6px;font:600 13px inherit;cursor:pointer;}
+#phproxy-bar button.go:hover{background:#1d4ed8;}
+#phproxy-bar.dark button.go{background:#3b82f6;}
+#phproxy-bar.dark button.go:hover{background:#60a5fa;}
+#phproxy-bar a.link{color:#2563eb;text-decoration:none;}
+#phproxy-bar a.link:hover{text-decoration:underline;}
+#phproxy-bar.dark a.link{color:#93c5fd;}
+#phproxy-bar details.menu{position:relative;margin-left:auto;}
+#phproxy-bar details.menu>summary{list-style:none;cursor:pointer;padding:6px;color:inherit;border-radius:6px;display:inline-flex;align-items:center;gap:4px;}
+#phproxy-bar details.menu>summary::-webkit-details-marker{display:none;}
+#phproxy-bar details.menu>summary:hover{background:rgba(0,0,0,.06);}
+#phproxy-bar.dark details.menu>summary:hover{background:rgba(255,255,255,.08);}
+#phproxy-bar details.menu>summary svg{width:16px;height:16px;display:block;stroke:currentColor;fill:none;stroke-width:2;}
+#phproxy-bar details.menu .popup{position:absolute;top:100%;right:0;margin-top:4px;min-width:160px;background:#fff;border:1px solid #e2e6ec;border-radius:8px;box-shadow:0 10px 15px -3px rgba(0,0,0,.1),0 4px 6px -4px rgba(0,0,0,.05);padding:4px;}
+#phproxy-bar.dark details.menu .popup{background:#1e293b;border-color:#334155;}
+#phproxy-bar details.menu .popup a{display:block;padding:6px 10px;color:#0f172a;text-decoration:none;border-radius:4px;}
+#phproxy-bar details.menu .popup a:hover{background:#f1f5f9;}
+#phproxy-bar.dark details.menu .popup a{color:#f1f5f9;}
+#phproxy-bar.dark details.menu .popup a:hover{background:#2a374e;}
+CSS;
+
+        // Inline SVG gear icon
+        $_gear = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 0 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 0 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h0a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 0 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v0a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>';
+
+        $_url_form = '<style id="phproxy-bar-style">' . $_bar_css . '</style>'
+            . '<div id="phproxy-bar">'
+            .   '<form class="row" method="post" action="' . $_action_safe . '">'
+            .     '<input class="url" id="____' . $_url_var_safe . '" type="text" name="' . $_url_var_safe . '" value="' . $_url_safe . '"/>'
+            .     '<button class="go" type="submit" name="go">Go</button>'
+            .     '<a class="link" href="' . $_up_url_safe . '">Up</a>'
+            .     '<a class="link" href="' . $_home_safe . '">Home</a>'
+            .     '<details class="menu">'
+            .       '<summary aria-label="Settings menu" title="Settings">' . $_gear . '</summary>'
+            .       '<div class="popup">'
+            .         '<a href="' . $_home_safe . 'index.php?tab=options">Options</a>'
+            .         '<a href="' . $_home_safe . 'index.php?tab=cookies">Cookies</a>'
+            .         '<a href="' . $_home_safe . 'index.php?tab=headers">Headers</a>'
+            .       '</div>'
+            .     '</details>'
+            .   '</form>'
+            . '</div>'
+            . "<script>(function(){try{var s=localStorage.getItem('phproxy-theme');var b=document.getElementById('phproxy-bar');if(!b)return;if(s==='dark')b.classList.add('dark');else if(s!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches)b.classList.add('dark');}catch(e){}})();</script>";
+
         $_response_body = preg_replace('#\<\s*body(.*?)\>#si', "$0\n$_url_form" , $_response_body, 1);
     }
 }
