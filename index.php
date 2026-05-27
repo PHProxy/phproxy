@@ -35,7 +35,7 @@ $_config            =
                     ];
 $_flags             =
                     [
-                        'include_form'    => 0,
+                        'include_form'    => 1,
                         'remove_scripts'  => 1,
                         'accept_cookies'  => 1,
                         'show_images'     => 1,
@@ -151,6 +151,76 @@ $_bindip           = 'default';
 
 // Functions declaration
 require_once "./files/php/functions.inc.php";
+
+//
+// ACTION DISPATCHER (Cookies / Headers / User-Agent management)
+// All POSTs to ?action=… are handled here and redirect back to the entry form.
+//
+if (isset($_GET['action']) && $_SERVER['REQUEST_METHOD'] === 'POST')
+{
+    $_action   = $_GET['action'];
+    $_settings = ['flags', 'userAgent', 'PHPSESSID'];
+
+    $_clear_cookie = function ($name) use ($_http_host) {
+        setcookie($name, '', time() - 3600, '/');
+        setcookie($name, '', time() - 3600, '/', '.' . $_http_host);
+    };
+
+    switch ($_action)
+    {
+        case 'clear-cookies':
+            foreach ($_COOKIE as $_ck => $_cv) {
+                if (in_array($_ck, $_settings, true)) continue;
+                if (strpos($_ck, 'hdr_') === 0) continue;
+                $_clear_cookie($_ck);
+            }
+            break;
+
+        case 'delete-cookie':
+            $_name = isset($_POST['name']) ? (string) $_POST['name'] : '';
+            if ($_name !== '' && !in_array($_name, $_settings, true) && strpos($_name, 'hdr_') !== 0) {
+                $_clear_cookie($_name);
+            }
+            break;
+
+        case 'add-cookie':
+            $_name  = isset($_POST['cookieAddName']) ? trim((string) $_POST['cookieAddName']) : '';
+            $_value = isset($_POST['cookieAddValue']) ? (string) $_POST['cookieAddValue'] : '';
+            if ($_name !== '' && !in_array($_name, $_settings, true) && strpos($_name, 'hdr_') !== 0 && strpbrk($_name, "\r\n;,= \t") === false) {
+                setcookie($_name, $_value, time() + 86400 * 30, '/');
+            }
+            break;
+
+        case 'add-header':
+            $_name  = isset($_POST['headerAddName']) ? trim((string) $_POST['headerAddName']) : '';
+            $_value = isset($_POST['headerAddValue']) ? (string) $_POST['headerAddValue'] : '';
+            if (preg_match('/^[A-Za-z0-9-]+$/', $_name) && strpbrk($_value, "\r\n") === false) {
+                setcookie('hdr_' . $_name, $_value, time() + 86400 * 365, '/');
+            }
+            break;
+
+        case 'delete-header':
+            $_name = isset($_POST['name']) ? (string) $_POST['name'] : '';
+            if (preg_match('/^[A-Za-z0-9-]+$/', $_name)) {
+                setcookie('hdr_' . $_name, '', time() - 3600, '/');
+            }
+            break;
+
+        case 'set-ua':
+            $_ua = isset($_POST['userAgent']) ? (string) $_POST['userAgent'] : '';
+            if (strpbrk($_ua, "\r\n") === false) {
+                setcookie('userAgent', $_ua, time() + 86400 * 365, '/');
+            }
+            break;
+
+        default:
+            // Unknown action — just bounce to entry form
+            break;
+    }
+
+    header('Location: ' . $_script_url);
+    exit(0);
+}
 
 //
 // SET FLAGS
@@ -408,6 +478,15 @@ do
     if ($_flags['show_referer'] && isset($_SERVER['HTTP_REFERER']) && preg_match('#^\Q' . $_script_url . '?' . $_config['url_var_name'] . '=\E([^&]+)#', $_SERVER['HTTP_REFERER'], $matches))
     {
         $_request_headers .= 'Referer: ' . decode_url($matches[1]) . "\r\n";
+    }
+    // Custom headers (managed from the Headers tab, stored as hdr_<name> cookies)
+    foreach ($_COOKIE as $_ck => $_cv)
+    {
+        if (strpos($_ck, 'hdr_') !== 0) continue;
+        $_hdr_name = substr($_ck, 4);
+        if (preg_match('/^[A-Za-z0-9-]+$/', $_hdr_name) && strpbrk($_cv, "\r\n") === false) {
+            $_request_headers .= $_hdr_name . ': ' . $_cv . "\r\n";
+        }
     }
     if (!empty($_COOKIE))
     {
@@ -1122,22 +1201,20 @@ else
     require_once "./files/php/misc.override.php";
     if ($_flags['include_form'] && !isset($_GET['nf']))
     {
-        $_url_form      = '<div style="width:100%;margin:0;text-align:center;border-bottom:1px solid #725554;color:#000000;background-color:#F2FDF3;font-size:12px;font-weight:bold;font-family:Bitstream Vera Sans,arial,sans-serif;padding:4px;">'
-                        . '<form method="post" action="' . $_script_url . '">'
-                        . ' <label for="____' . $_config['url_var_name'] . '"><a href="' . $_url . '">Address</a>:</label> <input id="____' . $_config['url_var_name'] . '" type="text" size="80" name="' . $_config['url_var_name'] . '" value="' . $_url . '" />'
-                        . ' <input type="submit" name="go" value="Go" />'
-                        . ' [go: <a href="' . $_script_url . '?' . $_config['url_var_name'] . '=' . encode_url($_url_parts['prev_dir']) .' ">up one dir</a>, <a href="' . $_script_base . '">main page</a>]'
-                        . '<br /><hr />';
+        // PHProxy top bar injected into proxied pages.
+        // Scoped inline styles only (the host page's CSS can't bleed into it).
+        $_bar_style = "all:initial;display:block;position:sticky;top:0;z-index:2147483647;box-sizing:border-box;width:100%;margin:0;padding:8px 12px;background:#0f172a;color:#f1f5f9;font:13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;border-bottom:1px solid #334155;";
+        $_bar_input = "box-sizing:border-box;flex:1 1 320px;min-width:0;padding:6px 10px;background:#1e293b;color:#f1f5f9;border:1px solid #334155;border-radius:6px;font:inherit;";
+        $_bar_btn   = "padding:6px 14px;background:#3b82f6;color:#fff;border:0;border-radius:6px;font:600 13px inherit;cursor:pointer;text-decoration:none;";
+        $_bar_link  = "color:#93c5fd;text-decoration:none;margin-left:8px;font:inherit;";
 
-        foreach ($_flags as $flag_name => $flag_value)
-        {
-            if (!$_frozen_flags[$flag_name])
-            {
-                $_url_form .= '<label><input type="checkbox" name="' . $_config['flags_var_name'] . '[' . $flag_name . ']"' . ($flag_value ? ' checked="checked"' : '') . ' /> ' . $_labels[$flag_name][0] . '</label> ';
-            }
-        }
-
-        $_url_form .= '</form></div>';
+        $_url_form  = '<div style="' . $_bar_style . '">'
+                    . '<form method="post" action="' . $_script_url . '" style="all:initial;display:flex;flex-wrap:wrap;gap:8px;align-items:center;font:inherit;color:inherit;">'
+                    . '<input id="____' . $_config['url_var_name'] . '" type="text" name="' . $_config['url_var_name'] . '" value="' . htmlspecialchars($_url) . '" style="' . $_bar_input . '"/>'
+                    . '<button type="submit" name="go" style="' . $_bar_btn . '">Go</button>'
+                    . '<a href="' . $_script_url . '?' . $_config['url_var_name'] . '=' . encode_url($_url_parts['prev_dir']) . '" style="' . $_bar_link . '">Up</a>'
+                    . '<a href="' . $_script_base . '" style="' . $_bar_link . '">Home</a>'
+                    . '</form></div>';
         $_response_body = preg_replace('#\<\s*body(.*?)\>#si', "$0\n$_url_form" , $_response_body, 1);
     }
 }
