@@ -411,41 +411,139 @@ p.info { background: var(--success-soft); color: var(--text); border-left: 3px s
     list-style: none;
     margin: 0 0 12px;
     padding: 0;
-    max-height: 280px;
+    max-height: 380px;
     overflow-y: auto;
 }
 
-.kv-list li {
+.kv-list .kv-row {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
+    gap: 6px;
+    align-items: stretch;
+    margin-bottom: 6px;
+}
+
+.kv-list .kv-card {
+    flex: 1 1 auto;
+    min-width: 0;
     background: var(--surface-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    margin-bottom: 6px;
+    overflow: hidden;
+}
+
+.kv-list .kv-card > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    list-style: none;
     font: 13px var(--font-mono);
     color: var(--text);
 }
 
-.kv-list li > span {
+.kv-list .kv-card > summary::-webkit-details-marker { display: none; }
+.kv-list .kv-card > summary::marker { content: ''; }
+.kv-list .kv-card > summary:hover { background: rgba(0,0,0,.03); }
+:root[data-theme="dark"] .kv-list .kv-card > summary:hover { background: rgba(255,255,255,.04); }
+
+.kv-list .kv-display {
     flex: 1 1 auto;
     min-width: 0;
     word-break: break-all;
 }
 
-.kv-list .kv-name { font-weight: 600; }
-.kv-list .kv-host { color: var(--accent); }
-.kv-list .kv-val  { color: var(--text-muted); }
-.kv-list .kv-sep  { color: var(--text-muted); margin: 0 6px; }
+.kv-list .kv-name    { font-weight: 600; }
+.kv-list .kv-host    { color: var(--accent); }
+.kv-list .kv-val     { color: var(--text-muted); }
+.kv-list .kv-sep     { color: var(--text-muted); margin: 0 6px; }
+.kv-list .kv-chevron {
+    color: var(--text-muted);
+    font-size: 11px;
+    flex-shrink: 0;
+    transition: transform .15s;
+}
+.kv-list .kv-card[open] .kv-chevron { transform: rotate(180deg); }
+
+.kv-list .kv-edit {
+    padding: 10px 12px 12px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.kv-list .kv-edit-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font: 13px var(--font);
+}
+
+.kv-list .kv-edit-field > span {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.kv-list .kv-edit-field input {
+    padding: 6px 10px;
+    font: 13px var(--font-mono);
+}
+
+.kv-list .kv-edit-check {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font: 13px var(--font);
+    color: var(--text);
+}
+
+.kv-list .kv-edit-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+.kv-list .kv-edit-actions .button-submit { padding: 8px 14px; font-size: 13px; }
+
+.kv-list .kv-delete {
+    display: flex;
+    align-items: center;
+}
 
 .kv-list .empty {
     background: transparent;
     border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
     color: var(--text-muted);
     font: 13px var(--font);
-    justify-content: center;
+    text-align: center;
+    padding: 12px;
+    margin-bottom: 6px;
+}
+
+.tabs label .tab-count {
+    display: inline-block;
+    margin-left: 4px;
+    padding: 1px 7px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 500;
+    vertical-align: middle;
+}
+
+#tab-options:checked ~ .tabs label[for="tab-options"] .tab-count,
+#tab-cookies:checked ~ .tabs label[for="tab-cookies"] .tab-count,
+#tab-headers:checked ~ .tabs label[for="tab-headers"] .tab-count {
+    color: var(--accent);
+    border-color: var(--accent);
 }
 
 .kv-add {

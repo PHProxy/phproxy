@@ -98,7 +98,7 @@ $_ua_presets = [
     </header>
 
 <?php if ($data['category'] != 'auth'): ?>
-    <form method="post" action="<?php echo htmlspecialchars($_SERVER['PHP_SELF']); ?>">
+    <form id="proxy-main-form" method="post" action="<?php echo htmlspecialchars($_SERVER['PHP_SELF']); ?>">
         <div class="card">
             <div class="form-row url-row">
                 <input class="url-input" type="text" name="<?php echo htmlspecialchars($GLOBALS['_config']['url_var_name']) ?>" value="<?php echo isset($_GET[$GLOBALS['_config']['url_var_name']]) ? htmlspecialchars(decode_url($_GET[$GLOBALS['_config']['url_var_name']])) : (isset($_GET['__iv']) ? htmlspecialchars($_GET['__iv']) : ''); ?>" placeholder="https://www.example.com/" required autofocus autocomplete="off"/>
@@ -151,21 +151,25 @@ switch ($data['category']) {
 }
 ?>
         </div>
+    </form>
+    <?php /* Main URL form ends here. Tabs below have their own per-row forms;
+             Options-tab inputs use form="proxy-main-form" so they ride along
+             on URL submission and persist as the 'flags' cookie. */ ?>
 
-        <?php if (in_array(0, $GLOBALS['_frozen_flags'])): ?>
-        <div class="card">
-            <div class="tabs-wrap">
-                <input type="radio" name="tab" id="tab-options"<?php echo $_active_tab === 'options' ? ' checked' : ''; ?>/>
-                <input type="radio" name="tab" id="tab-cookies"<?php echo $_active_tab === 'cookies' ? ' checked' : ''; ?>/>
-                <input type="radio" name="tab" id="tab-headers"<?php echo $_active_tab === 'headers' ? ' checked' : ''; ?>/>
+    <?php if (in_array(0, $GLOBALS['_frozen_flags'])): ?>
+    <div class="card">
+        <div class="tabs-wrap">
+            <input type="radio" name="tab" id="tab-options"<?php echo $_active_tab === 'options' ? ' checked' : ''; ?>/>
+            <input type="radio" name="tab" id="tab-cookies"<?php echo $_active_tab === 'cookies' ? ' checked' : ''; ?>/>
+            <input type="radio" name="tab" id="tab-headers"<?php echo $_active_tab === 'headers' ? ' checked' : ''; ?>/>
 
-                <nav class="tabs">
-                    <label for="tab-options">Options</label>
-                    <label for="tab-cookies">Cookies</label>
-                    <label for="tab-headers">Headers</label>
-                </nav>
+            <nav class="tabs">
+                <label for="tab-options">Options</label>
+                <label for="tab-cookies">Cookies <span class="tab-count"><?php echo count($_visible_cookies); ?></span></label>
+                <label for="tab-headers">Headers <span class="tab-count"><?php echo count($_custom_headers); ?></span></label>
+            </nav>
 
-                <section class="tab-panel" data-tab="options">
+            <section class="tab-panel" data-tab="options">
 <?php
 $_option_groups = [
     'Browsing' => ['include_form', 'remove_scripts', 'show_images', 'strip_iframes', 'block_3p', 'block_fonts', 'block_media'],
@@ -173,71 +177,88 @@ $_option_groups = [
     'Cookies'  => ['accept_cookies', 'session_cookies'],
 ];
 foreach ($_option_groups as $_group_name => $_group_flags):
-    // skip a group entirely if none of its flags are user-settable
     $_visible = false;
     foreach ($_group_flags as $_f) {
         if (!$GLOBALS['_frozen_flags'][$_f]) { $_visible = true; break; }
     }
     if (!$_visible) continue;
 ?>
-                    <fieldset class="option-group">
-                        <legend><?php echo htmlspecialchars($_group_name); ?></legend>
-                        <ul class="prx-opt-menu">
+                <fieldset class="option-group">
+                    <legend><?php echo htmlspecialchars($_group_name); ?></legend>
+                    <ul class="prx-opt-menu">
 <?php foreach ($_group_flags as $_f): ?>
 <?php if (!$GLOBALS['_frozen_flags'][$_f]): ?>
-                            <li class="option"><label><input type="checkbox" name="<?php echo $GLOBALS['_config']['flags_var_name']; ?>[<?php echo $_f; ?>]"<?php echo $GLOBALS['_flags'][$_f] ? ' checked' : ''; ?>/><span><?php echo $GLOBALS['_labels'][$_f][0]; ?></span></label></li>
+                        <li class="option"><label><input form="proxy-main-form" type="checkbox" name="<?php echo $GLOBALS['_config']['flags_var_name']; ?>[<?php echo $_f; ?>]"<?php echo $GLOBALS['_flags'][$_f] ? ' checked' : ''; ?>/><span><?php echo $GLOBALS['_labels'][$_f][0]; ?></span></label></li>
 <?php endif; ?>
 <?php endforeach; ?>
-                        </ul>
-                    </fieldset>
+                    </ul>
+                </fieldset>
 <?php endforeach; ?>
 <?php
 $_url_encoding = $GLOBALS['_flags']['rotate13'] ? 'rot13' : ($GLOBALS['_flags']['base64_encode'] ? 'base64' : 'none');
 ?>
-                    <fieldset class="option-group">
-                        <legend>Address bar</legend>
-                        <div class="radio-row">
-                            <span class="radio-row-label">URL encoding</span>
-                            <label><input type="radio" name="<?php echo $GLOBALS['_config']['flags_var_name']; ?>[__url_enc]" value="none"<?php echo $_url_encoding === 'none' ? ' checked' : ''; ?>/> None</label>
-                            <label><input type="radio" name="<?php echo $GLOBALS['_config']['flags_var_name']; ?>[__url_enc]" value="rot13"<?php echo $_url_encoding === 'rot13' ? ' checked' : ''; ?>/> ROT13</label>
-                            <label><input type="radio" name="<?php echo $GLOBALS['_config']['flags_var_name']; ?>[__url_enc]" value="base64"<?php echo $_url_encoding === 'base64' ? ' checked' : ''; ?>/> Base64</label>
-                        </div>
-                    </fieldset>
-                </section>
+                <fieldset class="option-group">
+                    <legend>Address bar</legend>
+                    <div class="radio-row">
+                        <span class="radio-row-label">URL encoding</span>
+                        <label><input form="proxy-main-form" type="radio" name="<?php echo $GLOBALS['_config']['flags_var_name']; ?>[__url_enc]" value="none"<?php echo $_url_encoding === 'none' ? ' checked' : ''; ?>/> None</label>
+                        <label><input form="proxy-main-form" type="radio" name="<?php echo $GLOBALS['_config']['flags_var_name']; ?>[__url_enc]" value="rot13"<?php echo $_url_encoding === 'rot13' ? ' checked' : ''; ?>/> ROT13</label>
+                        <label><input form="proxy-main-form" type="radio" name="<?php echo $GLOBALS['_config']['flags_var_name']; ?>[__url_enc]" value="base64"<?php echo $_url_encoding === 'base64' ? ' checked' : ''; ?>/> Base64</label>
+                    </div>
+                </fieldset>
+            </section>
 
-                <section class="tab-panel" data-tab="cookies">
-                    <p class="tab-help">Cookies held for proxied sites. Settings cookies (theme, flags, User-Agent) are not listed.</p>
+            <section class="tab-panel" data-tab="cookies">
+                <p class="tab-help">Cookies held for proxied sites. Click a row to edit; settings cookies (theme, flags, User-Agent) are excluded.</p>
 <?php if (empty($_visible_cookies)): ?>
-                    <ul class="kv-list"><li class="empty">No cookies yet</li></ul>
+                <ul class="kv-list"><li class="empty">No cookies yet</li></ul>
 <?php else: ?>
-                    <ul class="kv-list">
+                <ul class="kv-list">
 <?php foreach ($_visible_cookies as $_wire => $_c): ?>
-                        <li>
-                            <span>
-                                <?php if ($_c['is_proxy']): ?>
-                                    <span class="kv-host"><?php echo htmlspecialchars($_c['host']); ?></span><span class="kv-sep">·</span>
-                                <?php endif; ?>
-                                <span class="kv-name"><?php echo htmlspecialchars($_c['display_name']); ?></span><span class="kv-sep">=</span><span class="kv-val"><?php echo htmlspecialchars(mb_strimwidth($_c['value'], 0, 72, '…')); ?></span>
-                            </span>
-                            <button class="button-icon" type="submit" formaction="?action=delete-cookie" formmethod="post" formnovalidate name="name" value="<?php echo htmlspecialchars($_wire); ?>" title="Delete cookie" aria-label="Delete <?php echo htmlspecialchars($_c['display_name']); ?>">&times;</button>
-                        </li>
+                    <li class="kv-row">
+                        <details class="kv-card">
+                            <summary>
+                                <span class="kv-display">
+                                    <?php if ($_c['is_proxy']): ?><span class="kv-host"><?php echo htmlspecialchars($_c['host']); ?></span><span class="kv-sep">·</span><?php endif; ?>
+                                    <span class="kv-name"><?php echo htmlspecialchars($_c['display_name']); ?></span><span class="kv-sep">=</span><span class="kv-val"><?php echo htmlspecialchars(mb_strimwidth($_c['value'], 0, 72, '…')); ?></span>
+                                </span>
+                                <span class="kv-chevron" aria-hidden="true">▾</span>
+                            </summary>
+                            <form class="kv-edit" method="post" action="?action=edit-cookie">
+                                <input type="hidden" name="name" value="<?php echo htmlspecialchars($_wire); ?>"/>
+                                <label class="kv-edit-field"><span>Name</span><input type="text" name="cookieName" value="<?php echo htmlspecialchars($_c['display_name']); ?>" autocomplete="off"/></label>
+                                <label class="kv-edit-field"><span>Value</span><input type="text" name="cookieValue" value="<?php echo htmlspecialchars($_c['value']); ?>" autocomplete="off"/></label>
+                                <label class="kv-edit-field"><span>Host</span><input type="text" name="cookieDomain" value="<?php echo $_c['is_proxy'] ? htmlspecialchars('.' . $_c['host']) : ''; ?>" placeholder=".example.com" autocomplete="off"/></label>
+                                <label class="kv-edit-field"><span>Path</span><input type="text" name="cookiePath" value="<?php echo htmlspecialchars($_c['path'] ?: '/'); ?>" placeholder="/" autocomplete="off"/></label>
+                                <label class="kv-edit-check"><input type="checkbox" name="cookieSecure"<?php echo $_c['secure'] ? ' checked' : ''; ?>/> Secure</label>
+                                <div class="kv-edit-actions">
+                                    <button class="button-submit" type="submit">Save</button>
+                                </div>
+                            </form>
+                        </details>
+                        <form class="kv-delete" method="post" action="?action=delete-cookie">
+                            <input type="hidden" name="name" value="<?php echo htmlspecialchars($_wire); ?>"/>
+                            <button class="button-icon" type="submit" title="Delete cookie" aria-label="Delete <?php echo htmlspecialchars($_c['display_name']); ?>">&times;</button>
+                        </form>
+                    </li>
 <?php endforeach; ?>
-                    </ul>
+                </ul>
 <?php endif; ?>
-                    <p class="section-label">Add a cookie</p>
-                    <div class="kv-add">
-                        <input type="text" name="cookieAddName" placeholder="Name" autocomplete="off"/>
-                        <input type="text" name="cookieAddValue" placeholder="Value" autocomplete="off"/>
-                        <button type="submit" formaction="?action=add-cookie" formmethod="post" formnovalidate>Add</button>
-                    </div>
-                    <div class="tab-actions">
-                        <button class="button-ghost" type="submit" formaction="?action=clear-cookies" formmethod="post" formnovalidate>Clear all cookies</button>
-                    </div>
-                </section>
+                <p class="section-label">Add a cookie</p>
+                <form class="kv-add" method="post" action="?action=add-cookie">
+                    <input type="text" name="cookieAddName" placeholder="Name" autocomplete="off"/>
+                    <input type="text" name="cookieAddValue" placeholder="Value" autocomplete="off"/>
+                    <button type="submit">Add</button>
+                </form>
+                <form class="tab-actions" method="post" action="?action=clear-cookies">
+                    <button class="button-ghost" type="submit">Clear all cookies</button>
+                </form>
+            </section>
 
-                <section class="tab-panel" data-tab="headers">
-                    <p class="section-label">User-Agent</p>
-                    <p class="tab-help">Sent on every proxied request. Pick a preset or type a custom value below. <code>.</code> means &ldquo;use my real browser&rsquo;s User-Agent&rdquo;, <code>-</code> means &ldquo;send no User-Agent at all&rdquo;.</p>
+            <section class="tab-panel" data-tab="headers">
+                <p class="section-label">User-Agent</p>
+                <p class="tab-help">Sent on every proxied request. <code>.</code> means &ldquo;use my real browser&rsquo;s User-Agent&rdquo;, <code>-</code> means &ldquo;send no User-Agent at all&rdquo;.</p>
+                <form class="ua-form" method="post" action="?action=set-ua">
                     <div class="ua-picker">
                         <select id="ua-preset" aria-label="User-Agent preset">
 <?php foreach ($_ua_presets as $_val => $_lbl): ?>
@@ -248,36 +269,54 @@ $_url_encoding = $GLOBALS['_flags']['rotate13'] ? 'rot13' : ($GLOBALS['_flags'][
                         <input type="text" id="ua-input" name="userAgent" value="<?php echo htmlspecialchars($_current_ua); ?>" placeholder="Custom User-Agent string" autocomplete="off"/>
                     </div>
                     <div class="tab-actions" style="margin-top:12px">
-                        <button class="button-submit" type="submit" formaction="?action=set-ua" formmethod="post" formnovalidate>Save User-Agent</button>
+                        <button class="button-submit" type="submit">Save User-Agent</button>
                     </div>
+                </form>
 
-                    <hr class="divider"/>
+                <hr class="divider"/>
 
-                    <p class="section-label">Custom headers</p>
-                    <p class="tab-help">Extra HTTP headers sent on every outbound request. Header names must be ASCII letters, digits, and hyphens.</p>
+                <p class="section-label">Custom headers</p>
+                <p class="tab-help">Extra HTTP headers sent on every outbound request. Header names: ASCII letters, digits, hyphens.</p>
 <?php if (empty($_custom_headers)): ?>
-                    <ul class="kv-list"><li class="empty">No custom headers</li></ul>
+                <ul class="kv-list"><li class="empty">No custom headers</li></ul>
 <?php else: ?>
-                    <ul class="kv-list">
-<?php foreach ($_custom_headers as $_name => $_value): ?>
-                        <li>
-                            <span><span class="kv-name"><?php echo htmlspecialchars($_name); ?></span><span class="kv-sep">:</span><?php echo htmlspecialchars(mb_strimwidth($_value, 0, 80, '…')); ?></span>
-                            <button class="button-icon" type="submit" formaction="?action=delete-header" formmethod="post" formnovalidate name="name" value="<?php echo htmlspecialchars($_name); ?>" title="Delete header" aria-label="Delete header <?php echo htmlspecialchars($_name); ?>">&times;</button>
-                        </li>
+                <ul class="kv-list">
+<?php foreach ($_custom_headers as $_h_name => $_h_value): ?>
+                    <li class="kv-row">
+                        <details class="kv-card">
+                            <summary>
+                                <span class="kv-display">
+                                    <span class="kv-name"><?php echo htmlspecialchars($_h_name); ?></span><span class="kv-sep">:</span><span class="kv-val"><?php echo htmlspecialchars(mb_strimwidth($_h_value, 0, 72, '…')); ?></span>
+                                </span>
+                                <span class="kv-chevron" aria-hidden="true">▾</span>
+                            </summary>
+                            <form class="kv-edit" method="post" action="?action=edit-header">
+                                <input type="hidden" name="oldName" value="<?php echo htmlspecialchars($_h_name); ?>"/>
+                                <label class="kv-edit-field"><span>Name</span><input type="text" name="headerName" value="<?php echo htmlspecialchars($_h_name); ?>" pattern="[A-Za-z0-9-]+" autocomplete="off"/></label>
+                                <label class="kv-edit-field"><span>Value</span><input type="text" name="headerValue" value="<?php echo htmlspecialchars($_h_value); ?>" autocomplete="off"/></label>
+                                <div class="kv-edit-actions">
+                                    <button class="button-submit" type="submit">Save</button>
+                                </div>
+                            </form>
+                        </details>
+                        <form class="kv-delete" method="post" action="?action=delete-header">
+                            <input type="hidden" name="name" value="<?php echo htmlspecialchars($_h_name); ?>"/>
+                            <button class="button-icon" type="submit" title="Delete header" aria-label="Delete header <?php echo htmlspecialchars($_h_name); ?>">&times;</button>
+                        </form>
+                    </li>
 <?php endforeach; ?>
-                    </ul>
+                </ul>
 <?php endif; ?>
-                    <p class="section-label">Add a header</p>
-                    <div class="kv-add">
-                        <input type="text" name="headerAddName" placeholder="Accept-Language" pattern="[A-Za-z0-9-]+" autocomplete="off"/>
-                        <input type="text" name="headerAddValue" placeholder="en-GB,en;q=0.9" autocomplete="off"/>
-                        <button type="submit" formaction="?action=add-header" formmethod="post" formnovalidate>Add</button>
-                    </div>
-                </section>
-            </div>
+                <p class="section-label">Add a header</p>
+                <form class="kv-add" method="post" action="?action=add-header">
+                    <input type="text" name="headerAddName" placeholder="Accept-Language" pattern="[A-Za-z0-9-]+" autocomplete="off"/>
+                    <input type="text" name="headerAddValue" placeholder="en-GB,en;q=0.9" autocomplete="off"/>
+                    <button type="submit">Add</button>
+                </form>
+            </section>
         </div>
-        <?php endif; ?>
-    </form>
+    </div>
+    <?php endif; ?>
 <?php elseif ($data['category'] == 'auth'): ?>
     <form class="auth" method="post" action="<?php echo htmlspecialchars($_SERVER['REQUEST_URI']); ?>">
         <div class="card main-auth-box">
