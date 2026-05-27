@@ -1447,12 +1447,36 @@ else
             setcookie('phproxy-panel-tab', '', time() - 3600, '/');
         }
 
-        // Response-headers list for the new Response tab (read-only).
+        // Response-headers list for the new Trace tab (read-only).
         $_panel_response_pairs = [];
         foreach ($_response_keys as $_kl => $_ko) {
             if (!isset($_response_headers[$_kl])) continue;
             foreach ((array) $_response_headers[$_kl] as $_rv) {
                 $_panel_response_pairs[] = [$_ko, $_rv];
+            }
+        }
+
+        // Parse the outgoing request we just sent so the user can see the
+        // exact wire-form headers (method, path, Host, User-Agent, Cookie,
+        // any custom hdr_* entries we forwarded, etc.).
+        $_panel_request_pairs = [];
+        $_panel_request_line  = '';
+        $_req_lines = explode("\r\n", $_request_headers);
+        $_first = true;
+        foreach ($_req_lines as $_rl) {
+            // Stop at the empty line (end of headers; body follows for POSTs)
+            if ($_rl === '') break;
+            if ($_first) {
+                // Request line: "METHOD /path?query HTTP/1.0"
+                $_panel_request_line = $_rl;
+                $_first = false;
+                continue;
+            }
+            $_colon = strpos($_rl, ':');
+            if ($_colon === false) {
+                $_panel_request_pairs[] = [$_rl, ''];
+            } else {
+                $_panel_request_pairs[] = [substr($_rl, 0, $_colon), ltrim(substr($_rl, $_colon + 1))];
             }
         }
 
@@ -1465,35 +1489,25 @@ else
 
         $_bar_css = <<<CSS
 #phproxy-bar{all:initial;display:block;position:sticky;top:0;z-index:2147483647;box-sizing:border-box;width:100%;margin:0;padding:8px 12px;background:#ffffff;color:#0f172a;font:13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;border-bottom:1px solid #e2e6ec;}
-#phproxy-bar.dark{background:#0f172a;color:#f1f5f9;border-bottom-color:#334155;}
+#phproxy-bar[data-theme="dark"]{background:#0f172a;color:#f1f5f9;border-bottom-color:#334155;}
 #phproxy-bar *{box-sizing:border-box;font:inherit;color:inherit;}
 #phproxy-bar .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
 #phproxy-bar input.url{flex:1 1 320px;min-width:0;padding:6px 10px;background:#f8fafc;color:#0f172a;border:1px solid #e2e6ec;border-radius:6px;}
-#phproxy-bar.dark input.url{background:#1e293b;color:#f1f5f9;border-color:#334155;}
+#phproxy-bar[data-theme="dark"] input.url{background:#1e293b;color:#f1f5f9;border-color:#334155;}
 #phproxy-bar input.url:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.18);}
-#phproxy-bar.dark input.url:focus{border-color:#60a5fa;box-shadow:0 0 0 3px rgba(96,165,250,.25);}
+#phproxy-bar[data-theme="dark"] input.url:focus{border-color:#60a5fa;box-shadow:0 0 0 3px rgba(96,165,250,.25);}
 #phproxy-bar button.go{padding:6px 14px;background:#2563eb;color:#fff;border:0;border-radius:6px;font:600 13px inherit;cursor:pointer;}
 #phproxy-bar button.go:hover{background:#1d4ed8;}
-#phproxy-bar.dark button.go{background:#3b82f6;}
-#phproxy-bar.dark button.go:hover{background:#60a5fa;}
+#phproxy-bar[data-theme="dark"] button.go{background:#3b82f6;}
+#phproxy-bar[data-theme="dark"] button.go:hover{background:#60a5fa;}
 #phproxy-bar a.link{color:#2563eb;text-decoration:none;}
 #phproxy-bar a.link:hover{text-decoration:underline;}
-#phproxy-bar.dark a.link{color:#93c5fd;}
+#phproxy-bar[data-theme="dark"] a.link{color:#93c5fd;}
 #phproxy-bar label.gear{margin-left:auto;cursor:pointer;padding:6px;color:inherit;border-radius:6px;display:inline-flex;align-items:center;gap:4px;}
 #phproxy-bar label.gear:hover{background:rgba(0,0,0,.06);}
-#phproxy-bar.dark label.gear:hover{background:rgba(255,255,255,.08);}
+#phproxy-bar[data-theme="dark"] label.gear:hover{background:rgba(255,255,255,.08);}
 #phproxy-bar label.gear svg{width:16px;height:16px;display:block;stroke:currentColor;fill:none;stroke-width:2;}
-#phproxy-panel-toggle{position:absolute;left:-9999px;}
-#phproxy-panel{display:none;position:fixed;top:54px;right:16px;width:min(720px,calc(100vw - 32px));max-height:calc(100vh - 80px);overflow-y:auto;background:var(--bg,#f4f5f7);border:1px solid var(--border,#e2e6ec);border-radius:10px;box-shadow:0 18px 32px -8px rgba(15,23,42,.18);padding:18px 18px 22px;z-index:2147483646;}
-#phproxy-panel-toggle:checked ~ #phproxy-panel{display:block;}
-#phproxy-panel .panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--border,#e2e6ec);}
-#phproxy-panel .panel-head h2{margin:0;font-size:15px;font-weight:600;color:var(--text,#0f172a);letter-spacing:-.01em;}
-#phproxy-panel .panel-head .close{padding:4px 10px;font-size:13px;cursor:pointer;background:transparent;border:1px solid var(--border,#e2e6ec);border-radius:6px;color:var(--text-muted,#64748b);text-decoration:none;}
-#phproxy-panel .panel-head .close:hover{color:var(--text,#0f172a);}
-#phproxy-panel .panel-refresh{margin-top:16px;padding-top:14px;border-top:1px solid var(--border,#e2e6ec);display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap;}
-#phproxy-panel .panel-refresh .button-submit{padding:10px 18px;font-weight:600;}
-#phproxy-panel .panel-refresh small{color:var(--text-muted,#64748b);font-size:12px;align-self:center;}
-@media (max-width:600px){#phproxy-panel{top:auto;bottom:0;right:0;left:0;width:auto;max-height:80vh;border-radius:10px 10px 0 0;}}
+#phproxy-panel-toggle{position:absolute !important;left:-9999px !important;width:0 !important;height:0 !important;opacity:0 !important;pointer-events:none !important;}
 CSS;
 
         $_gear = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 0 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 0 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h0a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 0 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v0a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>';
@@ -1502,6 +1516,7 @@ CSS;
         $_panel_return_to       = $_current_proxy_url;
         $_panel_show_response   = true;
         $_panel_form_id         = '';  // no main URL form in this context
+        // $_panel_request_pairs and $_panel_request_line are already set above
         ob_start();
         include './files/php/_panel_tabs.inc.php';
         $_panel_inner_html = ob_get_clean();
@@ -1530,7 +1545,20 @@ CSS;
             .     '<a class="button-submit" href="' . $_current_proxy_safe . '">Refresh page</a>'
             .   '</div>'
             . '</div>'
-            . "<script>(function(){try{var s=localStorage.getItem('phproxy-theme');var b=document.getElementById('phproxy-bar');if(!b)return;if(s==='dark')b.classList.add('dark');else if(s!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches)b.classList.add('dark');}catch(e){}var sel=document.getElementById('ua-preset');var inp=document.getElementById('ua-input');if(sel&&inp){sel.addEventListener('change',function(){if(sel.value==='__custom__'){inp.focus();inp.select();}else{inp.value=sel.value;}});}})();</script>";
+            . "<script>(function(){"
+            .   "var theme='light';"
+            .   "try{var s=localStorage.getItem('phproxy-theme');"
+            .     "if(s==='dark'||s==='light')theme=s;"
+            .     "else if(matchMedia('(prefers-color-scheme: dark)').matches)theme='dark';"
+            .   "}catch(e){}"
+            .   "var bar=document.getElementById('phproxy-bar');"
+            .   "var pnl=document.getElementById('phproxy-panel');"
+            .   "if(bar)bar.setAttribute('data-theme',theme);"
+            .   "if(pnl)pnl.setAttribute('data-theme',theme);"
+            .   "var sel=document.getElementById('ua-preset');"
+            .   "var inp=document.getElementById('ua-input');"
+            .   "if(sel&&inp){sel.addEventListener('change',function(){if(sel.value==='__custom__'){inp.focus();inp.select();}else{inp.value=sel.value;}});}"
+            . "})();</script>";
 
         $_response_body = preg_replace('#\<\s*body(.*?)\>#si', "$0\n$_url_form" , $_response_body, 1);
     }

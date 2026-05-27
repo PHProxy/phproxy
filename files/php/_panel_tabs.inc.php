@@ -25,6 +25,8 @@
 if (!isset($_panel_return_to))      $_panel_return_to      = '';
 if (!isset($_panel_show_response))  $_panel_show_response  = false;
 if (!isset($_panel_response_pairs)) $_panel_response_pairs = [];
+if (!isset($_panel_request_pairs))  $_panel_request_pairs  = [];
+if (!isset($_panel_request_line))   $_panel_request_line   = '';
 if (!isset($_panel_active_tab))     $_panel_active_tab     = 'options';
 if (!isset($_panel_form_id))        $_panel_form_id        = '';
 
@@ -56,7 +58,7 @@ $_ua_presets_local = $GLOBALS['_ua_presets'] ?? [];
         <label for="tab-cookies">Cookies <span class="tab-count"><?php echo count($_v_cookies); ?></span></label>
         <label for="tab-headers">Headers <span class="tab-count"><?php echo count($_c_headers); ?></span></label>
         <?php if ($_panel_show_response): ?>
-        <label for="tab-response">Response <span class="tab-count"><?php echo count($_panel_response_pairs); ?></span></label>
+        <label for="tab-response">Trace <span class="tab-count"><?php echo count($_panel_request_pairs) + count($_panel_response_pairs); ?></span></label>
         <?php endif; ?>
     </nav>
 
@@ -290,7 +292,32 @@ foreach ($_v_cookies as $_wire => $_c):
 
     <?php if ($_panel_show_response): ?>
     <section class="tab-panel" data-tab="response">
-        <p class="tab-help">Headers the upstream server sent back for this URL. Read-only.</p>
+        <p class="section-label">Request to upstream</p>
+        <p class="tab-help">The HTTP request the proxy sent on your behalf for this URL.</p>
+<?php if ($_panel_request_line !== ''): ?>
+        <ul class="kv-list">
+            <li class="kv-row kv-row-readonly">
+                <div class="kv-card">
+                    <div class="kv-card-readonly kv-card-status"><?php echo htmlspecialchars($_panel_request_line); ?></div>
+                </div>
+            </li>
+<?php foreach ($_panel_request_pairs as $_rh): list($_rh_name, $_rh_value) = $_rh; ?>
+            <li class="kv-row kv-row-readonly">
+                <div class="kv-card">
+                    <div class="kv-card-readonly">
+                        <span class="kv-name"><?php echo htmlspecialchars($_rh_name); ?></span><span class="kv-sep">:</span><span class="kv-val"><?php echo htmlspecialchars($_rh_value); ?></span>
+                    </div>
+                </div>
+            </li>
+<?php endforeach; ?>
+        </ul>
+<?php else: ?>
+        <ul class="kv-list"><li class="empty">No request captured</li></ul>
+<?php endif; ?>
+
+        <hr class="divider"/>
+        <p class="section-label">Response from upstream</p>
+        <p class="tab-help">Headers the upstream server sent back.</p>
 <?php if (empty($_panel_response_pairs)): ?>
         <ul class="kv-list"><li class="empty">No response headers captured</li></ul>
 <?php else: ?>
@@ -298,8 +325,12 @@ foreach ($_v_cookies as $_wire => $_c):
 <?php foreach ($_panel_response_pairs as $_rh): list($_rh_name, $_rh_value) = $_rh; ?>
             <li class="kv-row kv-row-readonly">
                 <div class="kv-card">
-                    <div class="kv-card-readonly">
+                    <div class="kv-card-readonly<?php echo $_rh_value === '' ? ' kv-card-status' : ''; ?>">
+<?php if ($_rh_value === ''): ?>
+                        <?php echo htmlspecialchars($_rh_name); ?>
+<?php else: ?>
                         <span class="kv-name"><?php echo htmlspecialchars($_rh_name); ?></span><span class="kv-sep">:</span><span class="kv-val"><?php echo htmlspecialchars($_rh_value); ?></span>
+<?php endif; ?>
                     </div>
                 </div>
             </li>
