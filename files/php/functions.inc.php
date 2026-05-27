@@ -151,6 +151,90 @@ function phproxy_decode_proxy_cookie_value(string $wire_value): array
 }
 
 /**
+ * Anonymity seed — random 32 bytes, lives for 1 hour, regenerates on access
+ * when missing or expired. Used as the master key for the "Encrypted"
+ * URL-encoding mode so that URLs in any access log become unusable as soon
+ * as the seed rotates.
+ *
+ * Stored base64 in the phproxy-seed cookie. No external libs — pure PHP
+ * (random_bytes, hash, hash_hmac, openssl_encrypt, all in core).
+ */
+function phproxy_seed(): string
+{
+    if (!empty($_COOKIE['phproxy-seed'])) {
+        $seed = base64_decode((string) $_COOKIE['phproxy-seed'], true);
+        if ($seed !== false && strlen($seed) === 32) {
+            return $seed;
+        }
+    }
+    $seed = random_bytes(32);
+    $b64  = base64_encode($seed);
+    setcookie('phproxy-seed', $b64, [
+        'expires'  => time() + 3600,
+        'path'     => '/',
+        'samesite' => 'Lax',
+        'httponly' => false,
+    ]);
+    // Make the new seed visible to the rest of this request too
+    $_COOKIE['phproxy-seed'] = $b64;
+    return $seed;
+}
+
+/**
+ * AES-256-CTR encrypt the URL with a key derived from the session seed,
+ * then HMAC-SHA-256 the (iv||ciphertext) and append the tag. Result is
+ * base64-url-encoded (no padding) so it goes into the address bar cleanly.
+ *
+ * Anyone who scrapes the address bar or an access log AFTER the seed
+ * has rotated cannot recover the original URL: even possessing the
+ * ciphertext, they don't have the key.
+ */
+function phproxy_encrypt_url(string $url): string
+{
+    $seed    = phproxy_seed();
+    $key_enc = hash('sha256', $seed . "\x01enc", true);
+    $key_mac = hash('sha256', $seed . "\x02mac", true);
+    $iv      = random_bytes(16);
+    $ct      = openssl_encrypt($url, 'aes-256-ctr', $key_enc, OPENSSL_RAW_DATA, $iv);
+    if ($ct === false) return '';
+    $mac     = substr(hash_hmac('sha256', $iv . $ct, $key_mac, true), 0, 16);
+    return rtrim(strtr(base64_encode($iv . $ct . $mac), '+/', '-_'), '=');
+}
+
+/**
+ * Reverse of phproxy_encrypt_url. Returns null when:
+ *   - the seed cookie is missing or malformed (typically because it rotated)
+ *   - the base64-url token is malformed
+ *   - the HMAC tag doesn't verify (tampering or wrong key)
+ *   - openssl_decrypt fails
+ * Callers should treat null as "link expired" and bounce to the entry form.
+ */
+function phproxy_decrypt_url(string $token): ?string
+{
+    if (empty($_COOKIE['phproxy-seed'])) return null;
+    $seed = base64_decode((string) $_COOKIE['phproxy-seed'], true);
+    if ($seed === false || strlen($seed) !== 32) return null;
+
+    $b64 = strtr($token, '-_', '+/');
+    $pad = strlen($b64) % 4;
+    if ($pad) $b64 .= str_repeat('=', 4 - $pad);
+    $blob = base64_decode($b64, true);
+    if ($blob === false || strlen($blob) < 32) return null;
+
+    $iv  = substr($blob, 0, 16);
+    $ct  = substr($blob, 16, -16);
+    $tag = substr($blob, -16);
+
+    $key_enc = hash('sha256', $seed . "\x01enc", true);
+    $key_mac = hash('sha256', $seed . "\x02mac", true);
+    $expected = substr(hash_hmac('sha256', $iv . $ct, $key_mac, true), 0, 16);
+    if (!hash_equals($expected, $tag)) return null;
+
+    $pt = openssl_decrypt($ct, 'aes-256-ctr', $key_enc, OPENSSL_RAW_DATA, $iv);
+    return $pt === false ? null : $pt;
+}
+
+/**
  * Drop tracking query parameters (utm_*, fbclid, gclid, ...) from a URL.
  * No-op unless the strip_tracking flag is on. Called both at dispatch
  * (clean the user-typed URL) and during in-page link rewriting.
@@ -316,6 +400,12 @@ function encode_url(string $url): string
 {
     global $_flags;
 
+    // Encrypted mode produces a base64-url token already safe for the address
+    // bar; skip the surrounding rawurlencode so the cipherblob isn't double
+    // encoded.
+    if (!empty($_flags['encrypt_url'])) {
+        return phproxy_encrypt_url($url);
+    }
     if ($_flags['rotate13']) {
         $url = str_rot13($url);
     } elseif ($_flags['base64_encode']) {
@@ -328,8 +418,16 @@ function encode_url(string $url): string
 function decode_url(string $url): string
 {
     global $_flags;
-    $url = rawurldecode($url);
 
+    if (!empty($_flags['encrypt_url'])) {
+        $plain = phproxy_decrypt_url($url);
+        // Null = seed rotated / tampered / malformed — surface as an empty
+        // URL so the dispatcher renders the entry form instead of trying to
+        // proxy garbage.
+        return $plain === null ? '' : str_replace(['&amp;', '&#38;'], '&', $plain);
+    }
+
+    $url = rawurldecode($url);
     if ($_flags['rotate13']) {
         $url = str_rot13($url);
     } elseif ($_flags['base64_encode']) {

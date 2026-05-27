@@ -39,7 +39,9 @@ $_config            =
 // shift the existing flags and break every saved cookie).
 $_flags             =
                     [
-                        // new in v1.3.0
+                        // new in v1.3.x — anonymity seed URL encryption
+                        'encrypt_url'     => 0,
+                        // new in v1.3.0 (privacy / blocking)
                         'strip_tracking'  => 0,
                         'send_gpc'        => 0,
                         'send_dnt'        => 0,
@@ -61,6 +63,7 @@ $_flags             =
                     ];
 $_frozen_flags      =
                     [
+                        'encrypt_url'     => 0,
                         'strip_tracking'  => 0,
                         'send_gpc'        => 0,
                         'send_dnt'        => 0,
@@ -81,6 +84,7 @@ $_frozen_flags      =
                     ];
 $_labels            =
                     [
+                        'encrypt_url'     => ['Encrypted (rotating key)',  'AES-CTR encrypt URLs with a 1-hour session seed; old logs go unusable'],
                         'strip_tracking'  => ['Strip tracking params',     'Drop utm_*, fbclid, gclid and friends from URLs'],
                         'send_gpc'        => ['Send Sec-GPC: 1',           'Global Privacy Control signal'],
                         'send_dnt'        => ['Send DNT: 1',               'Do-Not-Track header'],
@@ -317,8 +321,10 @@ if (isset($_POST[$_config['flags_var_name']]['__url_enc']))
     $_enc = $_POST[$_config['flags_var_name']]['__url_enc'];
     unset($_POST[$_config['flags_var_name']]['rotate13']);
     unset($_POST[$_config['flags_var_name']]['base64_encode']);
-    if ($_enc === 'rot13')  $_POST[$_config['flags_var_name']]['rotate13']      = 1;
-    if ($_enc === 'base64') $_POST[$_config['flags_var_name']]['base64_encode'] = 1;
+    unset($_POST[$_config['flags_var_name']]['encrypt_url']);
+    if ($_enc === 'rot13')     $_POST[$_config['flags_var_name']]['rotate13']      = 1;
+    if ($_enc === 'base64')    $_POST[$_config['flags_var_name']]['base64_encode'] = 1;
+    if ($_enc === 'encrypted') $_POST[$_config['flags_var_name']]['encrypt_url']   = 1;
     unset($_POST[$_config['flags_var_name']]['__url_enc']);
 }
 

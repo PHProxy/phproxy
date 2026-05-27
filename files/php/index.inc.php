@@ -195,7 +195,10 @@ foreach ($_option_groups as $_group_name => $_group_flags):
                 </fieldset>
 <?php endforeach; ?>
 <?php
-$_url_encoding = $GLOBALS['_flags']['rotate13'] ? 'rot13' : ($GLOBALS['_flags']['base64_encode'] ? 'base64' : 'none');
+$_url_encoding = 'none';
+if (!empty($GLOBALS['_flags']['encrypt_url']))      $_url_encoding = 'encrypted';
+elseif ($GLOBALS['_flags']['rotate13'])             $_url_encoding = 'rot13';
+elseif ($GLOBALS['_flags']['base64_encode'])        $_url_encoding = 'base64';
 ?>
                 <fieldset class="option-group">
                     <legend>Address bar</legend>
@@ -204,6 +207,7 @@ $_url_encoding = $GLOBALS['_flags']['rotate13'] ? 'rot13' : ($GLOBALS['_flags'][
                         <label><input form="proxy-main-form" type="radio" name="<?php echo $GLOBALS['_config']['flags_var_name']; ?>[__url_enc]" value="none"<?php echo $_url_encoding === 'none' ? ' checked' : ''; ?>/> None</label>
                         <label><input form="proxy-main-form" type="radio" name="<?php echo $GLOBALS['_config']['flags_var_name']; ?>[__url_enc]" value="rot13"<?php echo $_url_encoding === 'rot13' ? ' checked' : ''; ?>/> ROT13</label>
                         <label><input form="proxy-main-form" type="radio" name="<?php echo $GLOBALS['_config']['flags_var_name']; ?>[__url_enc]" value="base64"<?php echo $_url_encoding === 'base64' ? ' checked' : ''; ?>/> Base64</label>
+                        <label><input form="proxy-main-form" type="radio" name="<?php echo $GLOBALS['_config']['flags_var_name']; ?>[__url_enc]" value="encrypted"<?php echo $_url_encoding === 'encrypted' ? ' checked' : ''; ?>/> Encrypted <span class="hint">(1h rotating key)</span></label>
                     </div>
                 </fieldset>
             </section>

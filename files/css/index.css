@@ -406,6 +406,7 @@ p.info { background: var(--success-soft); color: var(--text); border-left: 3px s
 }
 
 .radio-row label input { margin: 0; }
+.radio-row .hint { color: var(--text-muted); font-size: 11px; margin-left: 2px; }
 
 .kv-list {
     list-style: none;
