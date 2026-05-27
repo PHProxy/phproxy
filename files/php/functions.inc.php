@@ -82,6 +82,51 @@ function url_parse(string $url, array &$container): bool
     return false;
 }
 
+/**
+ * Drop tracking query parameters (utm_*, fbclid, gclid, ...) from a URL.
+ * No-op unless the strip_tracking flag is on. Called both at dispatch
+ * (clean the user-typed URL) and during in-page link rewriting.
+ */
+function strip_tracking_params(string $url): string
+{
+    if (empty($GLOBALS['_flags']['strip_tracking'])) {
+        return $url;
+    }
+    $parts = @parse_url($url);
+    if (empty($parts) || empty($parts['query'])) {
+        return $url;
+    }
+    parse_str($parts['query'], $params);
+    $tracking = [
+        'utm_source', 'utm_medium', 'utm_campaign', 'utm_term',
+        'utm_content', 'utm_id', 'utm_name', 'utm_referrer', 'utm_pubreferrer',
+        'fbclid', 'gclid', 'gclsrc', 'msclkid', 'dclid', 'yclid',
+        'mc_eid', 'mc_cid',
+        '_ga', '_gid',
+        'vero_id', 'vero_conv',
+        'hsCtaTracking',
+        'oly_anon_id', 'oly_enc_id',
+        '__hstc', '__hssc', '__hsfp',
+        'igshid', 'twclid', 'ttclid',
+        'mkt_tok',
+        'wickedid', 'wickedsource',
+    ];
+    foreach ($tracking as $k) {
+        foreach ([$k, strtoupper($k)] as $variant) {
+            unset($params[$variant]);
+        }
+    }
+    $new_query = http_build_query($params);
+    $rebuilt   = (isset($parts['scheme']) ? $parts['scheme'] . '://' : '')
+               . (isset($parts['user']) ? $parts['user'] . (isset($parts['pass']) ? ':' . $parts['pass'] : '') . '@' : '')
+               . ($parts['host'] ?? '')
+               . (isset($parts['port']) ? ':' . $parts['port'] : '')
+               . ($parts['path'] ?? '')
+               . ($new_query !== '' ? '?' . $new_query : '')
+               . (isset($parts['fragment']) ? '#' . $parts['fragment'] : '');
+    return $rebuilt;
+}
+
 function complete_url(string $url, bool $proxify = true): string
 {
     $url = html_entity_decode(trim($url));
@@ -124,6 +169,23 @@ function complete_url(string $url, bool $proxify = true): string
             $url = $GLOBALS['_base']['base'] . '/' . $url;
         }
     }
+
+    // Block 3rd-party resources: if the resolved URL's host differs from the
+    // page's host (modulo a leading "www."), neutralize the link so the proxy
+    // never fetches the resource.
+    if ($proxify && !empty($GLOBALS['_flags']['block_3p']) && !empty($GLOBALS['_url_parts']['host'])) {
+        $resolved_host = strtolower((string) (@parse_url($url, PHP_URL_HOST) ?: ''));
+        $page_host     = strtolower((string) $GLOBALS['_url_parts']['host']);
+        if ($resolved_host !== '' && $page_host !== '') {
+            $strip_www = function ($h) { return preg_replace('/^www\./', '', $h); };
+            if ($strip_www($resolved_host) !== $strip_www($page_host)) {
+                return 'about:blank';
+            }
+        }
+    }
+
+    // Drop tracking query parameters from links rendered in proxied pages
+    $url = strip_tracking_params($url);
 
     return $proxify ? "{$GLOBALS['_script_url']}?{$GLOBALS['_config']['url_var_name']}=" . encode_url($url) . $fragment : $url;
 }

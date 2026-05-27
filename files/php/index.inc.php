@@ -134,15 +134,43 @@ switch ($data['category']) {
                 </nav>
 
                 <section class="tab-panel" data-tab="options">
-                    <ul class="prx-opt-menu">
 <?php
-foreach ($GLOBALS['_flags'] as $flag_name => $flag_value) {
-    if (!$GLOBALS['_frozen_flags'][$flag_name]) {
-        echo '                        <li class="option"><label><input type="checkbox" name="' . $GLOBALS['_config']['flags_var_name'] . '[' . $flag_name . ']"' . ($flag_value ? ' checked="checked"' : '') . '/>' . htmlspecialchars($GLOBALS['_labels'][$flag_name][1]) . '</label></li>' . "\n";
+$_option_groups = [
+    'Browsing' => ['include_form', 'remove_scripts', 'show_images', 'strip_iframes', 'block_3p', 'block_fonts', 'block_media'],
+    'Privacy'  => ['show_referer', 'send_dnt', 'send_gpc', 'strip_title', 'strip_meta', 'strip_tracking'],
+    'Cookies'  => ['accept_cookies', 'session_cookies'],
+];
+foreach ($_option_groups as $_group_name => $_group_flags):
+    // skip a group entirely if none of its flags are user-settable
+    $_visible = false;
+    foreach ($_group_flags as $_f) {
+        if (!$GLOBALS['_frozen_flags'][$_f]) { $_visible = true; break; }
     }
-}
+    if (!$_visible) continue;
 ?>
-                    </ul>
+                    <fieldset class="option-group">
+                        <legend><?php echo htmlspecialchars($_group_name); ?></legend>
+                        <ul class="prx-opt-menu">
+<?php foreach ($_group_flags as $_f): ?>
+<?php if (!$GLOBALS['_frozen_flags'][$_f]): ?>
+                            <li class="option"><label><input type="checkbox" name="<?php echo $GLOBALS['_config']['flags_var_name']; ?>[<?php echo $_f; ?>]"<?php echo $GLOBALS['_flags'][$_f] ? ' checked' : ''; ?>/><span><?php echo $GLOBALS['_labels'][$_f][0]; ?></span></label></li>
+<?php endif; ?>
+<?php endforeach; ?>
+                        </ul>
+                    </fieldset>
+<?php endforeach; ?>
+<?php
+$_url_encoding = $GLOBALS['_flags']['rotate13'] ? 'rot13' : ($GLOBALS['_flags']['base64_encode'] ? 'base64' : 'none');
+?>
+                    <fieldset class="option-group">
+                        <legend>Address bar</legend>
+                        <div class="radio-row">
+                            <span class="radio-row-label">URL encoding</span>
+                            <label><input type="radio" name="<?php echo $GLOBALS['_config']['flags_var_name']; ?>[__url_enc]" value="none"<?php echo $_url_encoding === 'none' ? ' checked' : ''; ?>/> None</label>
+                            <label><input type="radio" name="<?php echo $GLOBALS['_config']['flags_var_name']; ?>[__url_enc]" value="rot13"<?php echo $_url_encoding === 'rot13' ? ' checked' : ''; ?>/> ROT13</label>
+                            <label><input type="radio" name="<?php echo $GLOBALS['_config']['flags_var_name']; ?>[__url_enc]" value="base64"<?php echo $_url_encoding === 'base64' ? ' checked' : ''; ?>/> Base64</label>
+                        </div>
+                    </fieldset>
                 </section>
 
                 <section class="tab-panel" data-tab="cookies">

@@ -33,8 +33,21 @@ $_config            =
                         'upon_hotlink'             => 1,
                         'compress_output'          => 0,
                     ];
+// NOTE on order: new flags MUST be appended to the head of $_flags so the
+// bitfield positions of existing flags stay stable (the cookie stores the
+// flag bitfield as a left-padded binary string — adding to the tail would
+// shift the existing flags and break every saved cookie).
 $_flags             =
                     [
+                        // new in v1.3.0
+                        'strip_tracking'  => 0,
+                        'send_gpc'        => 0,
+                        'send_dnt'        => 0,
+                        'block_media'     => 0,
+                        'block_fonts'     => 0,
+                        'block_3p'        => 0,
+                        'strip_iframes'   => 0,
+                        // original flags (positions preserved)
                         'include_form'    => 1,
                         'remove_scripts'  => 1,
                         'accept_cookies'  => 1,
@@ -48,6 +61,13 @@ $_flags             =
                     ];
 $_frozen_flags      =
                     [
+                        'strip_tracking'  => 0,
+                        'send_gpc'        => 0,
+                        'send_dnt'        => 0,
+                        'block_media'     => 0,
+                        'block_fonts'     => 0,
+                        'block_3p'        => 0,
+                        'strip_iframes'   => 0,
                         'include_form'    => 0,
                         'remove_scripts'  => 0,
                         'accept_cookies'  => 0,
@@ -61,16 +81,23 @@ $_frozen_flags      =
                     ];
 $_labels            =
                     [
-                        'include_form'    => ['Include Form', 'Include mini URL-form on every page'],
-                        'remove_scripts'  => ['Remove Scripts', 'Remove client-side scripting (i.e JavaScript)'],
-                        'accept_cookies'  => ['Accept Cookies', 'Allow cookies to be stored'],
-                        'show_images'     => ['Show Images', 'Show images on browsed pages'],
-                        'show_referer'    => ['Show Referer', 'Show actual referring Website'],
-                        'rotate13'        => ['Rotate13', 'Use ROT13 encoding on the address'],
-                        'base64_encode'   => ['Base64', 'Use base64 encoding on the address'],
-                        'strip_meta'      => ['Strip Meta', 'Strip meta information tags from pages'],
-                        'strip_title'     => ['Strip Title', 'Strip page title'],
-                        'session_cookies' => ['Session Cookies', 'Store cookies for this session only'],
+                        'strip_tracking'  => ['Strip tracking params',     'Drop utm_*, fbclid, gclid and friends from URLs'],
+                        'send_gpc'        => ['Send Sec-GPC: 1',           'Global Privacy Control signal'],
+                        'send_dnt'        => ['Send DNT: 1',               'Do-Not-Track header'],
+                        'block_media'     => ['Block media',               'Remove <video> and <audio> from proxied pages'],
+                        'block_fonts'     => ['Block web fonts',           'Remove font CDN links and @font-face rules'],
+                        'block_3p'        => ['Block 3rd-party resources', 'Don\'t proxy assets from a different host than the page'],
+                        'strip_iframes'   => ['Strip iframes',             'Remove <iframe> elements from proxied pages'],
+                        'include_form'    => ['Show top bar while browsing', 'Pin the URL bar to the top of every proxied page'],
+                        'remove_scripts'  => ['Block JavaScript',          'Strip <script> tags from proxied HTML'],
+                        'accept_cookies'  => ['Allow cookies',             'Store and forward cookies from proxied sites'],
+                        'show_images'     => ['Load images',               'Show images on proxied pages'],
+                        'show_referer'    => ['Send Referer header',       'Forward Referer to the target'],
+                        'rotate13'        => ['ROT13',                     'ROT13 the URL in the address bar'],
+                        'base64_encode'   => ['Base64',                    'Base64-encode the URL in the address bar'],
+                        'strip_meta'      => ['Strip <meta> tags',         'Remove meta tags from proxied pages'],
+                        'strip_title'     => ['Hide page title',           'Strip <title> so the browser tab is anonymous'],
+                        'session_cookies' => ['Session-only cookies',      'Forget cookies when the browser closes'],
                     ];
 
 $_hosts             =
@@ -223,6 +250,20 @@ if (isset($_GET['action']) && $_SERVER['REQUEST_METHOD'] === 'POST')
 }
 
 //
+// URL encoding radio (Options tab) → maps a single radio value back onto
+// the two underlying mutually-exclusive flag checkboxes.
+//
+if (isset($_POST[$_config['flags_var_name']]['__url_enc']))
+{
+    $_enc = $_POST[$_config['flags_var_name']]['__url_enc'];
+    unset($_POST[$_config['flags_var_name']]['rotate13']);
+    unset($_POST[$_config['flags_var_name']]['base64_encode']);
+    if ($_enc === 'rot13')  $_POST[$_config['flags_var_name']]['rotate13']      = 1;
+    if ($_enc === 'base64') $_POST[$_config['flags_var_name']]['base64_encode'] = 1;
+    unset($_POST[$_config['flags_var_name']]['__url_enc']);
+}
+
+//
 // SET FLAGS
 //
 
@@ -333,6 +374,9 @@ else
 {
     show_report(['which' => 'index', 'category' => 'entry_form']);
 }
+
+// Clean tracking params from the user-typed/incoming URL too, before we visit it
+$_url = strip_tracking_params($_url);
 
 if (isset($_GET[$_config['url_var_name']], $_POST[$_config['basic_auth_var_name']], $_POST['username'], $_POST['password']))
 {
@@ -478,6 +522,14 @@ do
     if ($_flags['show_referer'] && isset($_SERVER['HTTP_REFERER']) && preg_match('#^\Q' . $_script_url . '?' . $_config['url_var_name'] . '=\E([^&]+)#', $_SERVER['HTTP_REFERER'], $matches))
     {
         $_request_headers .= 'Referer: ' . decode_url($matches[1]) . "\r\n";
+    }
+    if ($_flags['send_dnt'])
+    {
+        $_request_headers .= "DNT: 1\r\n";
+    }
+    if ($_flags['send_gpc'])
+    {
+        $_request_headers .= "Sec-GPC: 1\r\n";
     }
     // Custom headers (managed from the Headers tab, stored as hdr_<name> cookies)
     foreach ($_COOKIE as $_ck => $_cv)
@@ -814,6 +866,24 @@ else
     if (!$_flags['show_images'])
     {
         $_response_body = preg_replace('#<(img|image)[^>]*?>#si', '', $_response_body);
+    }
+    if ($_flags['strip_iframes'])
+    {
+        $_response_body = preg_replace('#<\s*iframe\b[^>]*>.*?<\s*/\s*iframe\s*>#si', '', $_response_body);
+        $_response_body = preg_replace('#<\s*iframe\b[^>]*/?>#si', '', $_response_body);
+    }
+    if ($_flags['block_media'])
+    {
+        $_response_body = preg_replace('#<\s*(video|audio)\b[^>]*>.*?<\s*/\s*\1\s*>#si', '', $_response_body);
+        $_response_body = preg_replace('#<\s*(video|audio|source|track)\b[^>]*/?>#si', '', $_response_body);
+    }
+    if ($_flags['block_fonts'])
+    {
+        // <link> tags pointing at known font CDNs, or declaring as="font"
+        $_response_body = preg_replace('#<\s*link\b[^>]*\b(?:fonts\.googleapis\.com|fonts\.gstatic\.com|use\.typekit\.net|use\.fontawesome\.com|fonts\.cdnfonts\.com|fonts\.bunny\.net|fonts\.adobe\.com)[^>]*/?>#si', '', $_response_body);
+        $_response_body = preg_replace('#<\s*link\b[^>]*\bas\s*=\s*["\']?font["\']?[^>]*/?>#si', '', $_response_body);
+        // @font-face blocks inside any inline CSS
+        $_response_body = preg_replace('#@font-face\s*\{[^}]*\}#si', '', $_response_body);
     }
 
     //
