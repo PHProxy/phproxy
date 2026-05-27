@@ -16,16 +16,33 @@ A copy of the license is provided in this package in the filename `LICENSE.md`.
 
 ## Requirements
 
- * PHP version > 5
- * `safe_mode` turned off or at least having the `fsockopen()` function not disabled
- * OpenSSL for support for secure connections (https)
- * Zlib for output compression
- * `file_uploads` turned On for HTTP file uploads.
+ * PHP >= 8.1 (tested on 8.5)
+ * `fsockopen()` not disabled
+ * OpenSSL extension for HTTPS targets
+ * Zlib extension for output compression (optional)
+ * `file_uploads` turned On for HTTP file uploads
 
 ## Installation
 
+### Option A — Docker (recommended)
+
+```
+git clone https://github.com/PHProxy/phproxy.git
+cd phproxy
+docker compose up -d
+```
+
+Open http://localhost:8080/ — that's it.
+
+The shipped `docker-compose.yml` bind-mounts the source for development.
+For a production deployment, remove the `volumes:` block so the image runs
+the baked-in code. The container is based on the official `php:8.5-apache`
+image and needs no extra extensions.
+
+### Option B — Standalone
+
 Copy the files of the repository in your public web server folder or to a
-directory of your liking (prefrebly in its own directory).
+directory of your liking (preferably in its own directory).
 
 ```
 cd /var/www/html/
@@ -90,3 +107,9 @@ right now.
 
 PHProxy also doesn't support FTP. This may or may not be introduced 
 in future releases, but there are no current plans for FTP support.
+
+Modern sites that gate access behind Cloudflare challenge pages, mandatory
+JavaScript, or token-bound TLS (e.g. Google, GitHub, most large social
+networks) will not work through PHProxy. The proxy rewrites HTML/CSS URLs
+via regex — it does not run a headless browser, solve CAPTCHAs, or evaluate
+client-side scripts. This is a fundamental design limitation, not a bug.
