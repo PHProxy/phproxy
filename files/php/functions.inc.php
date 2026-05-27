@@ -1,18 +1,18 @@
 <?php
-function show_report($data)
+function show_report(array $data): void
 {
     require_once "./files/php/index.inc.php";
     exit(0);
 }
 
-function add_cookie($name, $value, $expires = 0)
+function add_cookie(string $name, mixed $value, int $expires = 0): string
 {
     return rawurlencode(rawurlencode($name)) . '=' . rawurlencode(rawurlencode($value)) . (empty($expires) ? '' : '; expires=' . gmdate('D, d-M-Y H:i:s \G\M\T', $expires)) . '; path=/; domain=.' . $GLOBALS['_http_host'];
 }
 
-function set_post_vars($array, $parent_key = null)
+function set_post_vars(array $array, ?string $parent_key = null): array
 {
-    $temp = array();
+    $temp = [];
 
     foreach ($array as $key => $value) {
         $key = isset($parent_key) ? sprintf('%s[%s]', $parent_key, urlencode($key)) : urlencode($key);
@@ -26,9 +26,9 @@ function set_post_vars($array, $parent_key = null)
     return $temp;
 }
 
-function set_post_files($array, $parent_key = null)
+function set_post_files(array $array, ?string $parent_key = null): array
 {
-    $temp = array();
+    $temp = [];
 
     foreach ($array as $key => $value) {
         $key = isset($parent_key) ? sprintf('%s[%s]', $parent_key, urlencode($key)) : urlencode($key);
@@ -42,7 +42,7 @@ function set_post_files($array, $parent_key = null)
     return $temp;
 }
 
-function url_parse($url, &$container)
+function url_parse(string $url, array &$container): bool
 {
     $temp = @parse_url($url);
 
@@ -57,14 +57,14 @@ function url_parse($url, &$container)
         }
 
         $temp['path'] = isset($temp['path']) ? $temp['path'] : '/';
-        $path         = array();
+        $path         = [];
         $temp['path'] = explode('/', $temp['path']);
 
         foreach ($temp['path'] as $dir) {
             if ($dir === '..') {
                 array_pop($path);
             } else if ($dir !== '.') {
-                for ($dir = rawurldecode($dir), $new_dir = '', $i = 0, $count_i = strlen($dir); $i < $count_i; $new_dir .= strspn($dir{$i}, 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789$-_.+!*\'(),?:@&;=') ? $dir{$i} : rawurlencode($dir{$i}), ++$i);
+                for ($dir = rawurldecode($dir), $new_dir = '', $i = 0, $count_i = strlen($dir); $i < $count_i; $new_dir .= strspn($dir[$i], 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789$-_.+!*\'(),?:@&;=') ? $dir[$i] : rawurlencode($dir[$i]), ++$i);
                 $path[] = $new_dir;
             }
         }
@@ -82,7 +82,7 @@ function url_parse($url, &$container)
     return false;
 }
 
-function complete_url($url, $proxify = true)
+function complete_url(string $url, bool $proxify = true): string
 {
     $url = html_entity_decode(trim($url));
 
@@ -128,7 +128,7 @@ function complete_url($url, $proxify = true)
     return $proxify ? "{$GLOBALS['_script_url']}?{$GLOBALS['_config']['url_var_name']}=" . encode_url($url) . $fragment : $url;
 }
 
-function proxify_inline_css($css)
+function proxify_inline_css(string $css): string
 {
     preg_match_all('#url\s*\(\s*(.+?(?=\)[f;,}!\s*]))\)#i', $css, $matches, PREG_SET_ORDER);
 
@@ -139,7 +139,7 @@ function proxify_inline_css($css)
     return $css;
 }
 
-function proxify_css($css)
+function proxify_css(string $css): string
 {
     $css = proxify_inline_css($css);
 
@@ -160,7 +160,7 @@ function proxify_css($css)
     return $css;
 }
 
-function proxify_css_url($url)
+function proxify_css_url(string $url): string
 {
     $url   = trim($url);
     $delim = strpos($url, '"') === 0 ? '"' : (strpos($url, "'") === 0 ? "'" : '');
@@ -182,7 +182,7 @@ function proxify_css_url($url)
     return $delim . preg_replace('#([\(\),\s\'"\\\])#', '\\$1', complete_url(trim(preg_replace('#\\\(.)#', '$1', $url)))) . $delim;
 }
 
-function encode_url($url)
+function encode_url(string $url): string
 {
     global $_flags;
 
@@ -195,7 +195,7 @@ function encode_url($url)
     return rawurlencode($url);
 }
 
-function decode_url($url)
+function decode_url(string $url): string
 {
     global $_flags;
     $url = rawurldecode($url);
@@ -206,5 +206,5 @@ function decode_url($url)
         $url = base64_decode($url);
     }
 
-    return str_replace(array('&amp;', '&#38;'), '&', $url);
+    return str_replace(['&amp;', '&#38;'], '&', $url);
 }

@@ -1,0 +1,12 @@
+services:
+  phproxy:
+    build: .
+    image: phproxy:local
+    container_name: phproxy
+    ports:
+      - "8080:80"
+    # Bind-mount the source for development. Remove the `volumes:` block
+    # below to run with the image-baked code (production mode).
+    volumes:
+      - ./:/var/www/html
+    restart: unless-stopped

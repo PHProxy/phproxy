@@ -154,7 +154,7 @@ class php_idna
                         $code = $t + (($q - $t) % (static::BASE - $t));
                         $output .= static::$encodeTable[$code];
 
-                        $q = ($q - $t) / (static::BASE - $t);
+                        $q = intdiv($q - $t, static::BASE - $t);
                     }
 
                     $output .= static::$encodeTable[$q];
