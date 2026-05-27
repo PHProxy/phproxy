@@ -1096,22 +1096,31 @@ else
     require_once "./files/php/misc.override.php";
     if ($_flags['include_form'] && !isset($_GET['nf']))
     {
-        $_url_form      = '<div style="width:100%;margin:0;text-align:center;border-bottom:1px solid #725554;color:#000000;background-color:#F2FDF3;font-size:12px;font-weight:bold;font-family:Bitstream Vera Sans,arial,sans-serif;padding:4px;">'
-                        . '<form method="post" action="' . $_script_url . '">'
-                        . ' <label for="____' . $_config['url_var_name'] . '"><a href="' . $_url . '">Address</a>:</label> <input id="____' . $_config['url_var_name'] . '" type="text" size="80" name="' . $_config['url_var_name'] . '" value="' . $_url . '" />'
-                        . ' <input type="submit" name="go" value="Go" />'
-                        . ' [go: <a href="' . $_script_url . '?' . $_config['url_var_name'] . '=' . encode_url($_url_parts['prev_dir']) .' ">up one dir</a>, <a href="' . $_script_base . '">main page</a>]'
-                        . '<br /><hr />';
+        // PHProxy mini URL bar injected into proxied pages.
+        // Uses scoped inline styles so it survives the target page's CSS.
+        $_bar_style = "all:initial;display:block;position:relative;z-index:2147483647;box-sizing:border-box;width:100%;margin:0;padding:8px 12px;background:#0f172a;color:#f1f5f9;font:13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;border-bottom:1px solid #334155;";
+        $_bar_input = 'box-sizing:border-box;flex:1 1 320px;min-width:0;padding:6px 10px;background:#1e293b;color:#f1f5f9;border:1px solid #334155;border-radius:6px;font:inherit;';
+        $_bar_btn   = 'padding:6px 14px;background:#3b82f6;color:#fff;border:0;border-radius:6px;font:600 13px inherit;cursor:pointer;text-decoration:none;';
+        $_bar_link  = 'color:#93c5fd;text-decoration:none;margin-left:8px;';
+        $_bar_chk   = 'color:#cbd5e1;font:13px inherit;display:inline-flex;align-items:center;gap:4px;margin-right:12px;';
 
+        $_url_form  = '<div style="' . $_bar_style . '">'
+                    . '<form method="post" action="' . $_script_url . '" style="all:initial;display:flex;flex-wrap:wrap;gap:8px;align-items:center;font:inherit;color:inherit;">'
+                    . '<input id="____' . $_config['url_var_name'] . '" type="text" name="' . $_config['url_var_name'] . '" value="' . $_url . '" style="' . $_bar_input . '"/>'
+                    . '<button type="submit" name="go" style="' . $_bar_btn . '">Go</button>'
+                    . '<a href="' . $_script_url . '?' . $_config['url_var_name'] . '=' . encode_url($_url_parts['prev_dir']) . '" style="' . $_bar_link . '">Up</a>'
+                    . '<a href="' . $_script_base . '" style="' . $_bar_link . '">Home</a>'
+                    . '</form>';
+
+        $_url_form .= '<div style="margin-top:6px;display:flex;flex-wrap:wrap;align-items:center;">';
         foreach ($_flags as $flag_name => $flag_value)
         {
             if (!$_frozen_flags[$flag_name])
             {
-                $_url_form .= '<label><input type="checkbox" name="' . $_config['flags_var_name'] . '[' . $flag_name . ']"' . ($flag_value ? ' checked="checked"' : '') . ' /> ' . $_labels[$flag_name][0] . '</label> ';
+                $_url_form .= '<label style="' . $_bar_chk . '"><input type="checkbox" name="' . $_config['flags_var_name'] . '[' . $flag_name . ']"' . ($flag_value ? ' checked="checked"' : '') . ' style="margin:0;accent-color:#3b82f6;"/> ' . $_labels[$flag_name][0] . '</label>';
             }
         }
-
-        $_url_form .= '</form></div>';
+        $_url_form .= '</div></div>';
         $_response_body = preg_replace('#\<\s*body(.*?)\>#si', "$0\n$_url_form" , $_response_body, 1);
     }
 }
