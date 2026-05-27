@@ -408,6 +408,53 @@ p.info { background: var(--success-soft); color: var(--text); border-left: 3px s
 .radio-row label input { margin: 0; }
 .radio-row .hint { color: var(--text-muted); font-size: 11px; margin-left: 2px; }
 
+.seed-config {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+}
+
+.seed-config .tab-help { margin-bottom: 10px; }
+
+.seed-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+}
+
+.seed-mini {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin: 0;
+}
+
+.seed-mini-label {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.seed-mini input,
+.seed-mini select {
+    padding: 6px 10px;
+    font: 13px var(--font-mono);
+    width: 100%;
+    max-width: none;
+}
+
+.seed-mini button {
+    padding: 8px 12px;
+    font: 600 13px var(--font);
+    align-self: flex-start;
+}
+
+.seed-mini .hint { color: var(--text-muted); font-size: 11px; font-weight: 400; }
+
 .kv-list {
     list-style: none;
     margin: 0 0 12px;

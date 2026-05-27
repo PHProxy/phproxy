@@ -151,51 +151,75 @@ function phproxy_decode_proxy_cookie_value(string $wire_value): array
 }
 
 /**
- * Anonymity seed — random 32 bytes, lives for 1 hour, regenerates on access
- * when missing or expired. Used as the master key for the "Encrypted"
- * URL-encoding mode so that URLs in any access log become unusable as soon
- * as the seed rotates.
+ * Anonymity seed configuration — TTL (seconds) and key length (bytes).
+ * Both adjustable from the Options tab; stored in long-lived settings
+ * cookies that survive seed rotation.
  *
- * Stored base64 in the phproxy-seed cookie. No external libs — pure PHP
- * (random_bytes, hash, hash_hmac, openssl_encrypt, all in core).
+ *   phproxy-seed-ttl   3600 default, clamped to [60, 7 days]
+ *   phproxy-seed-bits  256  default, accepts 128 / 192 / 256
+ */
+function phproxy_seed_ttl(): int
+{
+    $ttl = isset($_COOKIE['phproxy-seed-ttl']) ? (int) $_COOKIE['phproxy-seed-ttl'] : 3600;
+    if ($ttl < 60)         $ttl = 60;
+    if ($ttl > 86400 * 7)  $ttl = 86400 * 7;
+    return $ttl;
+}
+
+function phproxy_seed_bits(): int
+{
+    $bits = isset($_COOKIE['phproxy-seed-bits']) ? (int) $_COOKIE['phproxy-seed-bits'] : 256;
+    return in_array($bits, [128, 192, 256], true) ? $bits : 256;
+}
+
+function phproxy_seed_cipher(): string
+{
+    return 'aes-' . phproxy_seed_bits() . '-ctr';
+}
+
+/**
+ * Master seed for URL encryption. Random bytes, lives for ttl seconds,
+ * regenerates on access when missing/malformed. Stored base64 in the
+ * phproxy-seed cookie. No external libs — pure PHP (random_bytes, hash,
+ * hash_hmac, openssl_encrypt, all in core).
  */
 function phproxy_seed(): string
 {
+    $want_bytes = phproxy_seed_bits() / 8;
     if (!empty($_COOKIE['phproxy-seed'])) {
         $seed = base64_decode((string) $_COOKIE['phproxy-seed'], true);
-        if ($seed !== false && strlen($seed) === 32) {
+        if ($seed !== false && strlen($seed) === $want_bytes) {
             return $seed;
         }
     }
-    $seed = random_bytes(32);
+    $seed = random_bytes($want_bytes);
     $b64  = base64_encode($seed);
     setcookie('phproxy-seed', $b64, [
-        'expires'  => time() + 3600,
+        'expires'  => time() + phproxy_seed_ttl(),
         'path'     => '/',
         'samesite' => 'Lax',
         'httponly' => false,
     ]);
-    // Make the new seed visible to the rest of this request too
     $_COOKIE['phproxy-seed'] = $b64;
     return $seed;
 }
 
 /**
- * AES-256-CTR encrypt the URL with a key derived from the session seed,
- * then HMAC-SHA-256 the (iv||ciphertext) and append the tag. Result is
- * base64-url-encoded (no padding) so it goes into the address bar cleanly.
- *
- * Anyone who scrapes the address bar or an access log AFTER the seed
- * has rotated cannot recover the original URL: even possessing the
- * ciphertext, they don't have the key.
+ * AES-CTR (128/192/256-bit per phproxy-seed-bits) encrypt the URL with a
+ * key derived from the session seed, then HMAC-SHA-256 the (iv||ciphertext)
+ * and append a 128-bit tag. Result is base64-url-encoded (no padding) so
+ * it goes into the address bar cleanly.
  */
 function phproxy_encrypt_url(string $url): string
 {
     $seed    = phproxy_seed();
-    $key_enc = hash('sha256', $seed . "\x01enc", true);
+    $cipher  = phproxy_seed_cipher();
+    $klen    = phproxy_seed_bits() / 8;
+    // SHA-256 derives a 32-byte stream; truncate to AES key length
+    $key_enc = substr(hash('sha256', $seed . "\x01enc", true), 0, $klen);
     $key_mac = hash('sha256', $seed . "\x02mac", true);
     $iv      = random_bytes(16);
-    $ct      = openssl_encrypt($url, 'aes-256-ctr', $key_enc, OPENSSL_RAW_DATA, $iv);
+    $ct      = openssl_encrypt($url, $cipher, $key_enc, OPENSSL_RAW_DATA, $iv);
     if ($ct === false) return '';
     $mac     = substr(hash_hmac('sha256', $iv . $ct, $key_mac, true), 0, 16);
     return rtrim(strtr(base64_encode($iv . $ct . $mac), '+/', '-_'), '=');
@@ -207,13 +231,14 @@ function phproxy_encrypt_url(string $url): string
  *   - the base64-url token is malformed
  *   - the HMAC tag doesn't verify (tampering or wrong key)
  *   - openssl_decrypt fails
- * Callers should treat null as "link expired" and bounce to the entry form.
  */
 function phproxy_decrypt_url(string $token): ?string
 {
     if (empty($_COOKIE['phproxy-seed'])) return null;
+    $bits = phproxy_seed_bits();
+    $klen = $bits / 8;
     $seed = base64_decode((string) $_COOKIE['phproxy-seed'], true);
-    if ($seed === false || strlen($seed) !== 32) return null;
+    if ($seed === false || strlen($seed) !== $klen) return null;
 
     $b64 = strtr($token, '-_', '+/');
     $pad = strlen($b64) % 4;
@@ -225,12 +250,12 @@ function phproxy_decrypt_url(string $token): ?string
     $ct  = substr($blob, 16, -16);
     $tag = substr($blob, -16);
 
-    $key_enc = hash('sha256', $seed . "\x01enc", true);
-    $key_mac = hash('sha256', $seed . "\x02mac", true);
+    $key_enc  = substr(hash('sha256', $seed . "\x01enc", true), 0, $klen);
+    $key_mac  = hash('sha256', $seed . "\x02mac", true);
     $expected = substr(hash_hmac('sha256', $iv . $ct, $key_mac, true), 0, 16);
     if (!hash_equals($expected, $tag)) return null;
 
-    $pt = openssl_decrypt($ct, 'aes-256-ctr', $key_enc, OPENSSL_RAW_DATA, $iv);
+    $pt = openssl_decrypt($ct, 'aes-' . $bits . '-ctr', $key_enc, OPENSSL_RAW_DATA, $iv);
     return $pt === false ? null : $pt;
 }
 

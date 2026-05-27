@@ -39,8 +39,8 @@ $_config            =
 // shift the existing flags and break every saved cookie).
 $_flags             =
                     [
-                        // new in v1.3.x — anonymity seed URL encryption
-                        'encrypt_url'     => 0,
+                        // new in v1.3.x — anonymity seed URL encryption (on by default)
+                        'encrypt_url'     => 1,
                         // new in v1.3.0 (privacy / blocking)
                         'strip_tracking'  => 0,
                         'send_gpc'        => 0,
@@ -190,7 +190,7 @@ require_once "./files/php/functions.inc.php";
 if (isset($_GET['action']) && $_SERVER['REQUEST_METHOD'] === 'POST')
 {
     $_action   = $_GET['action'];
-    $_settings = ['flags', 'userAgent', 'PHPSESSID', 'phproxy-theme', 'phproxy-seed'];
+    $_settings = ['flags', 'userAgent', 'PHPSESSID', 'phproxy-theme', 'phproxy-seed', 'phproxy-seed-ttl', 'phproxy-seed-bits'];
 
     // Expire a cookie by its exact wire-form name. Uses setrawcookie() so PHP
     // doesn't URL-encode the name again — important for proxy-stored cookies
@@ -300,6 +300,34 @@ if (isset($_GET['action']) && $_SERVER['REQUEST_METHOD'] === 'POST')
                 setcookie('userAgent', $_ua, time() + 86400 * 365, '/');
             }
             $_redirect_tab = 'headers';
+            break;
+
+        case 'rotate-seed':
+            // Force a new seed on the next phproxy_seed() call by clearing the cookie
+            setcookie('phproxy-seed', '', time() - 3600, '/');
+            unset($_COOKIE['phproxy-seed']);
+            $_redirect_tab = 'options';
+            break;
+
+        case 'set-seed-ttl':
+            $_ttl = isset($_POST['seedTtl']) ? (int) $_POST['seedTtl'] : 3600;
+            if ($_ttl < 60)        $_ttl = 60;
+            if ($_ttl > 86400 * 7) $_ttl = 86400 * 7;
+            setcookie('phproxy-seed-ttl', (string) $_ttl, time() + 86400 * 365, '/');
+            // Also force seed rotation so the new TTL takes effect on the next encode
+            setcookie('phproxy-seed', '', time() - 3600, '/');
+            unset($_COOKIE['phproxy-seed']);
+            $_redirect_tab = 'options';
+            break;
+
+        case 'set-seed-bits':
+            $_bits = isset($_POST['seedBits']) ? (int) $_POST['seedBits'] : 256;
+            if (!in_array($_bits, [128, 192, 256], true)) $_bits = 256;
+            setcookie('phproxy-seed-bits', (string) $_bits, time() + 86400 * 365, '/');
+            // Key length changed → existing seed length no longer matches; rotate
+            setcookie('phproxy-seed', '', time() - 3600, '/');
+            unset($_COOKIE['phproxy-seed']);
+            $_redirect_tab = 'options';
             break;
 
         default:

@@ -4,7 +4,7 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF'])) {
 }
 
 // Cookies the proxy itself owns (settings) — excluded from the user-facing list
-$_proxy_settings_cookies = ['flags', 'userAgent', 'PHPSESSID', 'phproxy-theme', 'phproxy-seed'];
+$_proxy_settings_cookies = ['flags', 'userAgent', 'PHPSESSID', 'phproxy-theme', 'phproxy-seed', 'phproxy-seed-ttl', 'phproxy-seed-bits'];
 
 // Parse the raw Cookie header so we get the exact wire-form names the
 // browser is storing. $_COOKIE keys go through PHP's legacy dot→underscore
@@ -200,6 +200,11 @@ if (!empty($GLOBALS['_flags']['encrypt_url']))      $_url_encoding = 'encrypted'
 elseif ($GLOBALS['_flags']['rotate13'])             $_url_encoding = 'rot13';
 elseif ($GLOBALS['_flags']['base64_encode'])        $_url_encoding = 'base64';
 ?>
+<?php
+$_seed_ttl  = phproxy_seed_ttl();
+$_seed_bits = phproxy_seed_bits();
+$_seed_present = !empty($_COOKIE['phproxy-seed']);
+?>
                 <fieldset class="option-group">
                     <legend>Address bar</legend>
                     <div class="radio-row">
@@ -207,7 +212,31 @@ elseif ($GLOBALS['_flags']['base64_encode'])        $_url_encoding = 'base64';
                         <label><input form="proxy-main-form" type="radio" name="<?php echo $GLOBALS['_config']['flags_var_name']; ?>[__url_enc]" value="none"<?php echo $_url_encoding === 'none' ? ' checked' : ''; ?>/> None</label>
                         <label><input form="proxy-main-form" type="radio" name="<?php echo $GLOBALS['_config']['flags_var_name']; ?>[__url_enc]" value="rot13"<?php echo $_url_encoding === 'rot13' ? ' checked' : ''; ?>/> ROT13</label>
                         <label><input form="proxy-main-form" type="radio" name="<?php echo $GLOBALS['_config']['flags_var_name']; ?>[__url_enc]" value="base64"<?php echo $_url_encoding === 'base64' ? ' checked' : ''; ?>/> Base64</label>
-                        <label><input form="proxy-main-form" type="radio" name="<?php echo $GLOBALS['_config']['flags_var_name']; ?>[__url_enc]" value="encrypted"<?php echo $_url_encoding === 'encrypted' ? ' checked' : ''; ?>/> Encrypted <span class="hint">(1h rotating key)</span></label>
+                        <label><input form="proxy-main-form" type="radio" name="<?php echo $GLOBALS['_config']['flags_var_name']; ?>[__url_enc]" value="encrypted"<?php echo $_url_encoding === 'encrypted' ? ' checked' : ''; ?>/> Encrypted <span class="hint">(rotating key)</span></label>
+                    </div>
+
+                    <div class="seed-config">
+                        <p class="tab-help">Encrypted mode wraps each URL with a fresh AES-CTR ciphertext keyed off a random session seed. Once the seed rotates, any URL recorded earlier (logs, history, referers) becomes useless.</p>
+                        <div class="seed-row">
+                            <form class="seed-mini" method="post" action="?action=set-seed-ttl">
+                                <label class="seed-mini-label">Seed lifetime <span class="hint">(seconds)</span></label>
+                                <input type="number" name="seedTtl" min="60" max="604800" step="60" value="<?php echo (int) $_seed_ttl; ?>"/>
+                                <button class="button-cancel" type="submit">Save</button>
+                            </form>
+                            <form class="seed-mini" method="post" action="?action=set-seed-bits">
+                                <label class="seed-mini-label">Key length</label>
+                                <select name="seedBits">
+                                    <option value="128"<?php echo $_seed_bits === 128 ? ' selected' : ''; ?>>AES-128</option>
+                                    <option value="192"<?php echo $_seed_bits === 192 ? ' selected' : ''; ?>>AES-192</option>
+                                    <option value="256"<?php echo $_seed_bits === 256 ? ' selected' : ''; ?>>AES-256</option>
+                                </select>
+                                <button class="button-cancel" type="submit">Save</button>
+                            </form>
+                            <form class="seed-mini" method="post" action="?action=rotate-seed">
+                                <label class="seed-mini-label">Seed <span class="hint"><?php echo $_seed_present ? 'live' : 'not set'; ?></span></label>
+                                <button class="button-ghost" type="submit" title="Generate a new random seed now">Rotate now</button>
+                            </form>
+                        </div>
                     </div>
                 </fieldset>
             </section>
