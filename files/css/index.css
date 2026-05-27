@@ -326,18 +326,20 @@ p.info { background: var(--success-soft); color: var(--text); border-left: 3px s
 
 .tabs label:hover { color: var(--text); }
 
-#tab-options:checked ~ .tabs label[for="tab-options"],
-#tab-cookies:checked ~ .tabs label[for="tab-cookies"],
-#tab-headers:checked ~ .tabs label[for="tab-headers"] {
+#tab-options:checked  ~ .tabs label[for="tab-options"],
+#tab-cookies:checked  ~ .tabs label[for="tab-cookies"],
+#tab-headers:checked  ~ .tabs label[for="tab-headers"],
+#tab-response:checked ~ .tabs label[for="tab-response"] {
     color: var(--accent);
     border-bottom-color: var(--accent);
 }
 
 .tab-panel { display: none; }
 
-#tab-options:checked ~ .tab-panel[data-tab="options"],
-#tab-cookies:checked ~ .tab-panel[data-tab="cookies"],
-#tab-headers:checked ~ .tab-panel[data-tab="headers"] {
+#tab-options:checked  ~ .tab-panel[data-tab="options"],
+#tab-cookies:checked  ~ .tab-panel[data-tab="cookies"],
+#tab-headers:checked  ~ .tab-panel[data-tab="headers"],
+#tab-response:checked ~ .tab-panel[data-tab="response"] {
     display: block;
 }
 
@@ -636,12 +638,25 @@ p.info { background: var(--success-soft); color: var(--text); border-left: 3px s
     vertical-align: middle;
 }
 
-#tab-options:checked ~ .tabs label[for="tab-options"] .tab-count,
-#tab-cookies:checked ~ .tabs label[for="tab-cookies"] .tab-count,
-#tab-headers:checked ~ .tabs label[for="tab-headers"] .tab-count {
+#tab-options:checked  ~ .tabs label[for="tab-options"]  .tab-count,
+#tab-cookies:checked  ~ .tabs label[for="tab-cookies"]  .tab-count,
+#tab-headers:checked  ~ .tabs label[for="tab-headers"]  .tab-count,
+#tab-response:checked ~ .tabs label[for="tab-response"] .tab-count {
     color: var(--accent);
     border-color: var(--accent);
 }
+
+.kv-card-readonly {
+    padding: 8px 12px;
+    font: 13px var(--font-mono);
+    color: var(--text);
+    word-break: break-all;
+}
+
+.kv-row-readonly .kv-card { background: var(--surface-2); }
+.kv-row-readonly .kv-card-readonly .kv-name { font-weight: 600; color: var(--accent); }
+.kv-row-readonly .kv-card-readonly .kv-sep  { color: var(--text-muted); margin: 0 6px; }
+.kv-row-readonly .kv-card-readonly .kv-val  { color: var(--text); }
 
 .kv-add {
     display: grid;

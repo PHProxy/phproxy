@@ -1428,7 +1428,12 @@ else
         $_url_var_safe   = htmlspecialchars($_config['url_var_name']);
         $_current_proxy_url  = $_script_url . '?' . $_config['url_var_name'] . '=' . encode_url($_url);
         $_current_proxy_safe = htmlspecialchars($_current_proxy_url, ENT_QUOTES);
-        $_css_link_safe  = htmlspecialchars($_script_base . 'files/css/index.css', ENT_QUOTES);
+        // The panel uses a *scoped* stylesheet (every selector prefixed with
+        // #phproxy-panel) so loading it on the proxied page can't rewrite the
+        // host page's elements. Loading index.css here instead would leak
+        // global rules like `* { box-sizing }` and `body { font }` onto the
+        // proxied content.
+        $_css_link_safe  = htmlspecialchars($_script_base . 'files/css/panel.css', ENT_QUOTES);
 
         // Panel open/active-tab state — set by the dispatcher right after each
         // save action so the panel re-opens on the same tab the user just
