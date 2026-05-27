@@ -234,31 +234,58 @@ if (isset($_GET['action']) && $_SERVER['REQUEST_METHOD'] === 'POST')
             break;
 
         case 'add-cookie':
-            $_name  = isset($_POST['cookieAddName']) ? trim((string) $_POST['cookieAddName']) : '';
-            $_value = isset($_POST['cookieAddValue']) ? (string) $_POST['cookieAddValue'] : '';
-            if ($_name !== '' && !in_array($_name, $_settings, true) && strpos($_name, 'hdr_') !== 0 && strpbrk($_name, "\r\n;,= \t") === false) {
-                setcookie($_name, $_value, time() + 86400 * 30, '/');
-            }
-            $_redirect_tab = 'cookies';
-            break;
-
         case 'edit-cookie':
-            // Edit a proxy-stored COOKIE-prefixed entry: expire the old wire name,
-            // then re-emit with the user-supplied name/path/domain/value/secure.
-            $_old = isset($_POST['name']) ? (string) $_POST['name'] : '';
-            if ($_old !== '' && !in_array($_old, $_settings, true) && strpos($_old, 'hdr_') !== 0 && strpbrk($_old, "\r\n") === false) {
-                $_expire_raw($_old);
+            // For edit, $_POST['name'] carries the old wire-form name to be expired.
+            if ($_action === 'edit-cookie') {
+                $_old = isset($_POST['name']) ? (string) $_POST['name'] : '';
+                if ($_old !== '' && !in_array($_old, $_settings, true) && strpos($_old, 'hdr_') !== 0 && strpbrk($_old, "\r\n") === false) {
+                    $_expire_raw($_old);
+                }
             }
-            $_n   = isset($_POST['cookieName'])   ? (string) $_POST['cookieName']   : '';
-            $_p   = isset($_POST['cookiePath'])   ? (string) $_POST['cookiePath']   : '/';
-            $_d   = isset($_POST['cookieDomain']) ? (string) $_POST['cookieDomain'] : '';
-            $_v   = isset($_POST['cookieValue'])  ? (string) $_POST['cookieValue']  : '';
-            $_sec = !empty($_POST['cookieSecure']) ? 'secure' : '';
-            if ($_n !== '' && $_d !== '' && strpbrk($_n . $_p . $_d . $_v, "\r\n") === false) {
-                // Build a new COOKIE;name;path;domain id and let add_cookie's double
-                // URL-encoding handle the wire form.
-                $_id   = 'COOKIE;' . $_n . ';' . $_p . ';' . $_d;
-                header('Set-Cookie: ' . add_cookie($_id, $_v . ';' . $_sec, time() + 86400 * 30), false);
+
+            $_n        = isset($_POST['cookieName'])    ? trim((string) $_POST['cookieName']) : '';
+            $_v        = isset($_POST['cookieValue'])   ? (string) $_POST['cookieValue']  : '';
+            $_d        = isset($_POST['cookieDomain'])  ? (string) $_POST['cookieDomain'] : '';
+            $_p        = isset($_POST['cookiePath'])    ? (string) $_POST['cookiePath']   : '/';
+            $_days     = isset($_POST['cookieExpires']) ? (int) $_POST['cookieExpires']   : 30;
+            $_secure   = !empty($_POST['cookieSecure']);
+            $_httponly = !empty($_POST['cookieHttpOnly']);
+            $_ss_in    = isset($_POST['cookieSameSite']) ? (string) $_POST['cookieSameSite'] : '';
+            $_samesite = in_array($_ss_in, ['Lax', 'Strict', 'None'], true) ? $_ss_in : '';
+
+            if ($_n === '' || in_array($_n, $_settings, true) || strpos($_n, 'hdr_') === 0 || strpbrk($_n . $_v . $_d . $_p, "\r\n") !== false) {
+                $_redirect_tab = 'cookies';
+                break;
+            }
+
+            $_treat_as_proxy = $_d !== '';  // Cookie targets a specific host → store in proxy COOKIE; format
+
+            if ($_treat_as_proxy) {
+                // Re-encode as COOKIE;name;path;domain (the format the proxy's outbound
+                // cookie forwarder looks for) using setrawcookie so the double-encoded
+                // name lands on the wire matching what the browser will read back.
+                $_id_plain  = 'COOKIE;' . $_n . ';' . $_p . ';' . $_d;
+                $_val_plain = $_v . ';' . ($_secure ? 'secure' : '');
+                $_wire_name = rawurlencode(rawurlencode($_id_plain));
+                $_wire_val  = rawurlencode(rawurlencode($_val_plain));
+                $_opts = [
+                    'path'     => '/',
+                    'domain'   => '.' . $_http_host,
+                    'secure'   => false,
+                    'httponly' => $_httponly,
+                ];
+                if ($_days > 0) $_opts['expires'] = time() + $_days * 86400;
+                if ($_samesite !== '') $_opts['samesite'] = $_samesite;
+                @setrawcookie($_wire_name, $_wire_val, $_opts);
+            } else {
+                $_opts = [
+                    'path'     => $_p !== '' ? $_p : '/',
+                    'secure'   => $_secure,
+                    'httponly' => $_httponly,
+                ];
+                if ($_days > 0) $_opts['expires'] = time() + $_days * 86400;
+                if ($_samesite !== '') $_opts['samesite'] = $_samesite;
+                @setcookie($_n, $_v, $_opts);
             }
             $_redirect_tab = 'cookies';
             break;
@@ -300,6 +327,16 @@ if (isset($_GET['action']) && $_SERVER['REQUEST_METHOD'] === 'POST')
                 setcookie('userAgent', $_ua, time() + 86400 * 365, '/');
             }
             $_redirect_tab = 'headers';
+            break;
+
+        case 'toggle-raw':
+            $_now = !empty($_COOKIE['phproxy-show-raw']);
+            if ($_now) {
+                setcookie('phproxy-show-raw', '', time() - 3600, '/');
+            } else {
+                setcookie('phproxy-show-raw', '1', time() + 86400 * 365, '/');
+            }
+            $_redirect_tab = 'cookies';
             break;
 
         case 'rotate-seed':

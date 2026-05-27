@@ -4,7 +4,8 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF'])) {
 }
 
 // Cookies the proxy itself owns (settings) — excluded from the user-facing list
-$_proxy_settings_cookies = ['flags', 'userAgent', 'PHPSESSID', 'phproxy-theme', 'phproxy-seed', 'phproxy-seed-ttl', 'phproxy-seed-bits'];
+$_proxy_settings_cookies = ['flags', 'userAgent', 'PHPSESSID', 'phproxy-theme', 'phproxy-seed', 'phproxy-seed-ttl', 'phproxy-seed-bits', 'phproxy-show-raw'];
+$_show_raw_values        = !empty($_COOKIE['phproxy-show-raw']);
 
 // Parse the raw Cookie header so we get the exact wire-form names the
 // browser is storing. $_COOKIE keys go through PHP's legacy dot→underscore
@@ -23,23 +24,27 @@ foreach ($_raw_cookies as $_wire_name => $_wire_value) {
 
     $_parsed = phproxy_decode_proxy_cookie_id($_wire_name);
     if ($_parsed !== null) {
-        // Proxy-stored cookie set by an upstream site
         $_val = phproxy_decode_proxy_cookie_value($_wire_value);
         $_visible_cookies[$_wire_name] = [
             'display_name' => $_parsed['name'],
             'host'         => ltrim($_parsed['domain'], '.'),
+            'domain'       => $_parsed['domain'],
             'path'         => $_parsed['path'],
             'value'        => $_val['value'],
+            'raw_value'    => $_wire_value,
+            'raw_name'     => $_wire_name,
             'secure'       => $_val['secure'],
             'is_proxy'     => true,
         ];
     } else {
-        // User-added or other cookie on the proxy's own domain
         $_visible_cookies[$_wire_name] = [
             'display_name' => rawurldecode($_wire_name),
             'host'         => '',
+            'domain'       => '',
             'path'         => '',
             'value'        => rawurldecode($_wire_value),
+            'raw_value'    => $_wire_value,
+            'raw_name'     => $_wire_name,
             'secure'       => false,
             'is_proxy'     => false,
         ];
@@ -242,28 +247,49 @@ $_seed_present = !empty($_COOKIE['phproxy-seed']);
             </section>
 
             <section class="tab-panel" data-tab="cookies">
-                <p class="tab-help">Cookies held for proxied sites. Click a row to edit; settings cookies (theme, flags, User-Agent) are excluded.</p>
+                <div class="tab-toolbar">
+                    <p class="tab-help">Cookies held for proxied sites. Click a row to edit any attribute. Settings cookies (theme, flags, User-Agent, seed) are excluded.</p>
+                    <form class="toolbar-toggle" method="post" action="?action=toggle-raw">
+                        <button type="submit" class="button-cancel" title="Switch between URL-decoded and raw wire-form values"><?php echo $_show_raw_values ? 'Showing: raw' : 'Showing: decoded'; ?></button>
+                    </form>
+                </div>
 <?php if (empty($_visible_cookies)): ?>
                 <ul class="kv-list"><li class="empty">No cookies yet</li></ul>
 <?php else: ?>
                 <ul class="kv-list">
-<?php foreach ($_visible_cookies as $_wire => $_c): ?>
+<?php
+foreach ($_visible_cookies as $_wire => $_c):
+    $_disp_value = $_show_raw_values ? $_c['raw_value']   : $_c['value'];
+    $_disp_name  = $_show_raw_values ? $_c['raw_name']    : $_c['display_name'];
+?>
                     <li class="kv-row">
                         <details class="kv-card">
                             <summary>
                                 <span class="kv-display">
                                     <?php if ($_c['is_proxy']): ?><span class="kv-host"><?php echo htmlspecialchars($_c['host']); ?></span><span class="kv-sep">·</span><?php endif; ?>
-                                    <span class="kv-name"><?php echo htmlspecialchars($_c['display_name']); ?></span><span class="kv-sep">=</span><span class="kv-val"><?php echo htmlspecialchars(mb_strimwidth($_c['value'], 0, 72, '…')); ?></span>
+                                    <span class="kv-name"><?php echo htmlspecialchars($_disp_name); ?></span><span class="kv-sep">=</span><span class="kv-val"><?php echo htmlspecialchars(mb_strimwidth($_disp_value, 0, 72, '…')); ?></span>
                                 </span>
                                 <span class="kv-chevron" aria-hidden="true">▾</span>
                             </summary>
-                            <form class="kv-edit" method="post" action="?action=edit-cookie">
+                            <form class="kv-edit kv-edit-cookie" method="post" action="?action=edit-cookie">
                                 <input type="hidden" name="name" value="<?php echo htmlspecialchars($_wire); ?>"/>
                                 <label class="kv-edit-field"><span>Name</span><input type="text" name="cookieName" value="<?php echo htmlspecialchars($_c['display_name']); ?>" autocomplete="off"/></label>
-                                <label class="kv-edit-field"><span>Value</span><input type="text" name="cookieValue" value="<?php echo htmlspecialchars($_c['value']); ?>" autocomplete="off"/></label>
-                                <label class="kv-edit-field"><span>Host</span><input type="text" name="cookieDomain" value="<?php echo $_c['is_proxy'] ? htmlspecialchars('.' . $_c['host']) : ''; ?>" placeholder=".example.com" autocomplete="off"/></label>
+                                <label class="kv-edit-field kv-edit-wide"><span>Value</span><input type="text" name="cookieValue" value="<?php echo htmlspecialchars($_c['value']); ?>" autocomplete="off"/></label>
+                                <label class="kv-edit-field"><span>Host</span><input type="text" name="cookieDomain" value="<?php echo $_c['is_proxy'] ? htmlspecialchars($_c['domain']) : ''; ?>" placeholder=".example.com" autocomplete="off"/></label>
                                 <label class="kv-edit-field"><span>Path</span><input type="text" name="cookiePath" value="<?php echo htmlspecialchars($_c['path'] ?: '/'); ?>" placeholder="/" autocomplete="off"/></label>
-                                <label class="kv-edit-check"><input type="checkbox" name="cookieSecure"<?php echo $_c['secure'] ? ' checked' : ''; ?>/> Secure</label>
+                                <label class="kv-edit-field"><span>Expires <span class="hint">(days, 0 = session)</span></span><input type="number" name="cookieExpires" value="30" min="0" max="3650"/></label>
+                                <label class="kv-edit-field"><span>SameSite</span>
+                                    <select name="cookieSameSite">
+                                        <option value="">(default)</option>
+                                        <option value="Lax">Lax</option>
+                                        <option value="Strict">Strict</option>
+                                        <option value="None">None</option>
+                                    </select>
+                                </label>
+                                <div class="kv-edit-checks">
+                                    <label class="kv-edit-check"><input type="checkbox" name="cookieSecure"<?php echo $_c['secure'] ? ' checked' : ''; ?>/> Secure</label>
+                                    <label class="kv-edit-check"><input type="checkbox" name="cookieHttpOnly"/> HttpOnly</label>
+                                </div>
                                 <div class="kv-edit-actions">
                                     <button class="button-submit" type="submit">Save</button>
                                 </div>
@@ -277,12 +303,31 @@ $_seed_present = !empty($_COOKIE['phproxy-seed']);
 <?php endforeach; ?>
                 </ul>
 <?php endif; ?>
-                <p class="section-label">Add a cookie</p>
-                <form class="kv-add" method="post" action="?action=add-cookie">
-                    <input type="text" name="cookieAddName" placeholder="Name" autocomplete="off"/>
-                    <input type="text" name="cookieAddValue" placeholder="Value" autocomplete="off"/>
-                    <button type="submit">Add</button>
-                </form>
+                <details class="kv-card kv-card-add">
+                    <summary><span class="kv-display"><span class="kv-name">+ Add a cookie</span></span><span class="kv-chevron" aria-hidden="true">▾</span></summary>
+                    <form class="kv-edit kv-edit-cookie" method="post" action="?action=add-cookie">
+                        <label class="kv-edit-field"><span>Name</span><input type="text" name="cookieName" placeholder="session_id" autocomplete="off" required/></label>
+                        <label class="kv-edit-field kv-edit-wide"><span>Value</span><input type="text" name="cookieValue" placeholder="abc123" autocomplete="off"/></label>
+                        <label class="kv-edit-field"><span>Host <span class="hint">(empty = proxy domain)</span></span><input type="text" name="cookieDomain" placeholder=".example.com" autocomplete="off"/></label>
+                        <label class="kv-edit-field"><span>Path</span><input type="text" name="cookiePath" value="/" placeholder="/" autocomplete="off"/></label>
+                        <label class="kv-edit-field"><span>Expires <span class="hint">(days, 0 = session)</span></span><input type="number" name="cookieExpires" value="30" min="0" max="3650"/></label>
+                        <label class="kv-edit-field"><span>SameSite</span>
+                            <select name="cookieSameSite">
+                                <option value="">(default)</option>
+                                <option value="Lax" selected>Lax</option>
+                                <option value="Strict">Strict</option>
+                                <option value="None">None</option>
+                            </select>
+                        </label>
+                        <div class="kv-edit-checks">
+                            <label class="kv-edit-check"><input type="checkbox" name="cookieSecure"/> Secure</label>
+                            <label class="kv-edit-check"><input type="checkbox" name="cookieHttpOnly"/> HttpOnly</label>
+                        </div>
+                        <div class="kv-edit-actions">
+                            <button class="button-submit" type="submit">Add cookie</button>
+                        </div>
+                    </form>
+                </details>
                 <form class="tab-actions" method="post" action="?action=clear-cookies">
                     <button class="button-ghost" type="submit">Clear all cookies</button>
                 </form>

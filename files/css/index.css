@@ -523,6 +523,55 @@ p.info { background: var(--success-soft); color: var(--text); border-left: 3px s
     gap: 8px;
 }
 
+.kv-edit-cookie {
+    grid-template-columns: 1fr 1fr 1fr;
+}
+
+.kv-edit-wide { grid-column: span 2; }
+
+.kv-edit-checks {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding: 4px 0;
+}
+
+.kv-card.kv-card-add {
+    background: var(--surface);
+    border-style: dashed;
+    margin-bottom: 10px;
+}
+
+.kv-card.kv-card-add > summary { color: var(--text-muted); font: 13px var(--font); }
+.kv-card.kv-card-add > summary .kv-name { font-weight: 500; }
+.kv-card.kv-card-add[open] > summary { color: var(--text); }
+
+.tab-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.tab-toolbar .tab-help { flex: 1 1 auto; margin: 0; }
+
+.toolbar-toggle {
+    margin: 0;
+    flex-shrink: 0;
+}
+
+.toolbar-toggle button {
+    padding: 6px 12px;
+    font-size: 12px;
+}
+
+@media (max-width: 600px) {
+    .kv-edit-cookie { grid-template-columns: 1fr; }
+    .kv-edit-wide { grid-column: span 1; }
+}
+
 .kv-list .kv-edit-field {
     display: flex;
     flex-direction: column;
