@@ -436,7 +436,9 @@ p.info { background: var(--success-soft); color: var(--text); border-left: 3px s
 }
 
 .kv-list .kv-name { font-weight: 600; }
-.kv-list .kv-sep { color: var(--text-muted); margin: 0 6px; }
+.kv-list .kv-host { color: var(--accent); }
+.kv-list .kv-val  { color: var(--text-muted); }
+.kv-list .kv-sep  { color: var(--text-muted); margin: 0 6px; }
 
 .kv-list .empty {
     background: transparent;

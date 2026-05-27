@@ -186,28 +186,47 @@ require_once "./files/php/functions.inc.php";
 if (isset($_GET['action']) && $_SERVER['REQUEST_METHOD'] === 'POST')
 {
     $_action   = $_GET['action'];
-    $_settings = ['flags', 'userAgent', 'PHPSESSID'];
+    $_settings = ['flags', 'userAgent', 'PHPSESSID', 'phproxy-theme', 'phproxy-seed'];
 
-    $_clear_cookie = function ($name) use ($_http_host) {
-        setcookie($name, '', time() - 3600, '/');
-        setcookie($name, '', time() - 3600, '/', '.' . $_http_host);
+    // Expire a cookie by its exact wire-form name. Uses setrawcookie() so PHP
+    // doesn't URL-encode the name again — important for proxy-stored cookies
+    // whose wire form is already double-rawurlencoded (e.g.
+    // "COOKIE%253B...%253B.host.com").
+    $_expire_raw = function ($wire_name) use ($_http_host) {
+        $expired = 'Thu, 01 Jan 1970 00:00:01 GMT';
+        $headers = [
+            $wire_name . "=; expires={$expired}; Max-Age=0; path=/",
+            $wire_name . "=; expires={$expired}; Max-Age=0; path=/; domain=." . $_http_host,
+            $wire_name . "=; expires={$expired}; Max-Age=0; path=/; domain=" . $_http_host,
+        ];
+        foreach ($headers as $h) header('Set-Cookie: ' . $h, false);
     };
+
+    $_raw_cookies = phproxy_raw_cookies();
+    $_redirect_tab = '';
 
     switch ($_action)
     {
         case 'clear-cookies':
-            foreach ($_COOKIE as $_ck => $_cv) {
+            foreach ($_raw_cookies as $_ck => $_cv) {
                 if (in_array($_ck, $_settings, true)) continue;
                 if (strpos($_ck, 'hdr_') === 0) continue;
-                $_clear_cookie($_ck);
+                $_expire_raw($_ck);
             }
+            $_redirect_tab = 'cookies';
             break;
 
         case 'delete-cookie':
+            // $_POST['name'] is the wire-form name as the browser stored it.
             $_name = isset($_POST['name']) ? (string) $_POST['name'] : '';
-            if ($_name !== '' && !in_array($_name, $_settings, true) && strpos($_name, 'hdr_') !== 0) {
-                $_clear_cookie($_name);
+            if ($_name !== ''
+                && !in_array($_name, $_settings, true)
+                && strpos($_name, 'hdr_') !== 0
+                && strpbrk($_name, "\r\n") === false)
+            {
+                $_expire_raw($_name);
             }
+            $_redirect_tab = 'cookies';
             break;
 
         case 'add-cookie':
@@ -216,6 +235,28 @@ if (isset($_GET['action']) && $_SERVER['REQUEST_METHOD'] === 'POST')
             if ($_name !== '' && !in_array($_name, $_settings, true) && strpos($_name, 'hdr_') !== 0 && strpbrk($_name, "\r\n;,= \t") === false) {
                 setcookie($_name, $_value, time() + 86400 * 30, '/');
             }
+            $_redirect_tab = 'cookies';
+            break;
+
+        case 'edit-cookie':
+            // Edit a proxy-stored COOKIE-prefixed entry: expire the old wire name,
+            // then re-emit with the user-supplied name/path/domain/value/secure.
+            $_old = isset($_POST['name']) ? (string) $_POST['name'] : '';
+            if ($_old !== '' && !in_array($_old, $_settings, true) && strpos($_old, 'hdr_') !== 0 && strpbrk($_old, "\r\n") === false) {
+                $_expire_raw($_old);
+            }
+            $_n   = isset($_POST['cookieName'])   ? (string) $_POST['cookieName']   : '';
+            $_p   = isset($_POST['cookiePath'])   ? (string) $_POST['cookiePath']   : '/';
+            $_d   = isset($_POST['cookieDomain']) ? (string) $_POST['cookieDomain'] : '';
+            $_v   = isset($_POST['cookieValue'])  ? (string) $_POST['cookieValue']  : '';
+            $_sec = !empty($_POST['cookieSecure']) ? 'secure' : '';
+            if ($_n !== '' && $_d !== '' && strpbrk($_n . $_p . $_d . $_v, "\r\n") === false) {
+                // Build a new COOKIE;name;path;domain id and let add_cookie's double
+                // URL-encoding handle the wire form.
+                $_id   = 'COOKIE;' . $_n . ';' . $_p . ';' . $_d;
+                header('Set-Cookie: ' . add_cookie($_id, $_v . ';' . $_sec, time() + 86400 * 30), false);
+            }
+            $_redirect_tab = 'cookies';
             break;
 
         case 'add-header':
@@ -224,6 +265,21 @@ if (isset($_GET['action']) && $_SERVER['REQUEST_METHOD'] === 'POST')
             if (preg_match('/^[A-Za-z0-9-]+$/', $_name) && strpbrk($_value, "\r\n") === false) {
                 setcookie('hdr_' . $_name, $_value, time() + 86400 * 365, '/');
             }
+            $_redirect_tab = 'headers';
+            break;
+
+        case 'edit-header':
+            // Rename + re-value: expire old, set new
+            $_old = isset($_POST['oldName']) ? (string) $_POST['oldName'] : '';
+            $_new = isset($_POST['headerName']) ? trim((string) $_POST['headerName']) : '';
+            $_val = isset($_POST['headerValue']) ? (string) $_POST['headerValue'] : '';
+            if (preg_match('/^[A-Za-z0-9-]+$/', $_old)) {
+                setcookie('hdr_' . $_old, '', time() - 3600, '/');
+            }
+            if (preg_match('/^[A-Za-z0-9-]+$/', $_new) && strpbrk($_val, "\r\n") === false) {
+                setcookie('hdr_' . $_new, $_val, time() + 86400 * 365, '/');
+            }
+            $_redirect_tab = 'headers';
             break;
 
         case 'delete-header':
@@ -231,6 +287,7 @@ if (isset($_GET['action']) && $_SERVER['REQUEST_METHOD'] === 'POST')
             if (preg_match('/^[A-Za-z0-9-]+$/', $_name)) {
                 setcookie('hdr_' . $_name, '', time() - 3600, '/');
             }
+            $_redirect_tab = 'headers';
             break;
 
         case 'set-ua':
@@ -238,6 +295,7 @@ if (isset($_GET['action']) && $_SERVER['REQUEST_METHOD'] === 'POST')
             if (strpbrk($_ua, "\r\n") === false) {
                 setcookie('userAgent', $_ua, time() + 86400 * 365, '/');
             }
+            $_redirect_tab = 'headers';
             break;
 
         default:
@@ -245,7 +303,8 @@ if (isset($_GET['action']) && $_SERVER['REQUEST_METHOD'] === 'POST')
             break;
     }
 
-    header('Location: ' . $_script_url);
+    $_dest = $_script_url . ($_redirect_tab !== '' ? '?tab=' . $_redirect_tab : '');
+    header('Location: ' . $_dest);
     exit(0);
 }
 

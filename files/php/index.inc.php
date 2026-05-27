@@ -4,20 +4,52 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF'])) {
 }
 
 // Cookies the proxy itself owns (settings) — excluded from the user-facing list
-$_proxy_settings_cookies = ['flags', 'userAgent', 'PHPSESSID'];
+$_proxy_settings_cookies = ['flags', 'userAgent', 'PHPSESSID', 'phproxy-theme', 'phproxy-seed'];
 
-$_visible_cookies = [];
-$_custom_headers  = [];
-foreach ($_COOKIE as $_k => $_v) {
-    if (in_array($_k, $_proxy_settings_cookies, true)) continue;
-    if (strpos($_k, 'hdr_') === 0) {
-        $_custom_headers[substr($_k, 4)] = $_v;
+// Parse the raw Cookie header so we get the exact wire-form names the
+// browser is storing. $_COOKIE keys go through PHP's legacy dot→underscore
+// mangling which would prevent us from emitting matching Set-Cookie deletes.
+$_raw_cookies = phproxy_raw_cookies();
+
+$_visible_cookies = [];  // wire_name => ['display_name','host','path','value','secure','is_proxy']
+$_custom_headers  = [];  // header_name => header_value
+foreach ($_raw_cookies as $_wire_name => $_wire_value) {
+    // wire names of settings/header cookies don't contain %25, so URL-decoding is identity
+    if (in_array($_wire_name, $_proxy_settings_cookies, true)) continue;
+    if (strpos($_wire_name, 'hdr_') === 0) {
+        $_custom_headers[substr($_wire_name, 4)] = rawurldecode($_wire_value);
+        continue;
+    }
+
+    $_parsed = phproxy_decode_proxy_cookie_id($_wire_name);
+    if ($_parsed !== null) {
+        // Proxy-stored cookie set by an upstream site
+        $_val = phproxy_decode_proxy_cookie_value($_wire_value);
+        $_visible_cookies[$_wire_name] = [
+            'display_name' => $_parsed['name'],
+            'host'         => ltrim($_parsed['domain'], '.'),
+            'path'         => $_parsed['path'],
+            'value'        => $_val['value'],
+            'secure'       => $_val['secure'],
+            'is_proxy'     => true,
+        ];
     } else {
-        $_visible_cookies[$_k] = $_v;
+        // User-added or other cookie on the proxy's own domain
+        $_visible_cookies[$_wire_name] = [
+            'display_name' => rawurldecode($_wire_name),
+            'host'         => '',
+            'path'         => '',
+            'value'        => rawurldecode($_wire_value),
+            'secure'       => false,
+            'is_proxy'     => false,
+        ];
     }
 }
 
-$_current_ua = isset($_COOKIE['userAgent']) ? $_COOKIE['userAgent'] : '';
+$_current_ua    = isset($_COOKIE['userAgent']) ? $_COOKIE['userAgent'] : '';
+$_active_tab    = isset($_GET['tab']) ? (string) $_GET['tab'] : 'options';
+$_valid_tabs    = ['options' => 1, 'cookies' => 1, 'headers' => 1];
+if (!isset($_valid_tabs[$_active_tab])) $_active_tab = 'options';
 
 $_ua_presets = [
     ''  => '— Default browser User-Agent —',
@@ -123,9 +155,9 @@ switch ($data['category']) {
         <?php if (in_array(0, $GLOBALS['_frozen_flags'])): ?>
         <div class="card">
             <div class="tabs-wrap">
-                <input type="radio" name="tab" id="tab-options" checked/>
-                <input type="radio" name="tab" id="tab-cookies"/>
-                <input type="radio" name="tab" id="tab-headers"/>
+                <input type="radio" name="tab" id="tab-options"<?php echo $_active_tab === 'options' ? ' checked' : ''; ?>/>
+                <input type="radio" name="tab" id="tab-cookies"<?php echo $_active_tab === 'cookies' ? ' checked' : ''; ?>/>
+                <input type="radio" name="tab" id="tab-headers"<?php echo $_active_tab === 'headers' ? ' checked' : ''; ?>/>
 
                 <nav class="tabs">
                     <label for="tab-options">Options</label>
@@ -179,10 +211,15 @@ $_url_encoding = $GLOBALS['_flags']['rotate13'] ? 'rot13' : ($GLOBALS['_flags'][
                     <ul class="kv-list"><li class="empty">No cookies yet</li></ul>
 <?php else: ?>
                     <ul class="kv-list">
-<?php foreach ($_visible_cookies as $_name => $_value): ?>
+<?php foreach ($_visible_cookies as $_wire => $_c): ?>
                         <li>
-                            <span><span class="kv-name"><?php echo htmlspecialchars($_name); ?></span><span class="kv-sep">=</span><?php echo htmlspecialchars(mb_strimwidth($_value, 0, 80, '…')); ?></span>
-                            <button class="button-icon" type="submit" formaction="?action=delete-cookie" formmethod="post" formnovalidate name="name" value="<?php echo htmlspecialchars($_name); ?>" title="Delete cookie" aria-label="Delete <?php echo htmlspecialchars($_name); ?>">&times;</button>
+                            <span>
+                                <?php if ($_c['is_proxy']): ?>
+                                    <span class="kv-host"><?php echo htmlspecialchars($_c['host']); ?></span><span class="kv-sep">·</span>
+                                <?php endif; ?>
+                                <span class="kv-name"><?php echo htmlspecialchars($_c['display_name']); ?></span><span class="kv-sep">=</span><span class="kv-val"><?php echo htmlspecialchars(mb_strimwidth($_c['value'], 0, 72, '…')); ?></span>
+                            </span>
+                            <button class="button-icon" type="submit" formaction="?action=delete-cookie" formmethod="post" formnovalidate name="name" value="<?php echo htmlspecialchars($_wire); ?>" title="Delete cookie" aria-label="Delete <?php echo htmlspecialchars($_c['display_name']); ?>">&times;</button>
                         </li>
 <?php endforeach; ?>
                     </ul>

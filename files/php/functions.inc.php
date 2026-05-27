@@ -83,6 +83,74 @@ function url_parse(string $url, array &$container): bool
 }
 
 /**
+ * Parse the raw Cookie request header into wire-form (name, value) pairs.
+ * Unlike $_COOKIE, this preserves the exact wire-form name as the browser
+ * sent it — no URL decoding, no PHP dot→underscore mangling. We need this
+ * to be able to expire proxy-stored cookies via setrawcookie() with the
+ * matching name (PHP's setcookie() would URL-encode again and produce a
+ * triple-encoded name that doesn't match the browser's stored cookie).
+ */
+function phproxy_raw_cookies(): array
+{
+    $out = [];
+    $raw = isset($_SERVER['HTTP_COOKIE']) ? (string) $_SERVER['HTTP_COOKIE'] : '';
+    if ($raw === '') return $out;
+    foreach (explode(';', $raw) as $pair) {
+        $pair = ltrim($pair);
+        if ($pair === '') continue;
+        $eq = strpos($pair, '=');
+        if ($eq === false) {
+            $out[$pair] = '';
+        } else {
+            $out[substr($pair, 0, $eq)] = substr($pair, $eq + 1);
+        }
+    }
+    return $out;
+}
+
+/**
+ * Decode a wire-form cookie name that follows the proxy's
+ * COOKIE;<name>;<path>;<domain> format. Returns [name, path, domain] or
+ * null if the wire form doesn't match. Walks back the double URL-encoding
+ * that add_cookie() applies on the way out.
+ */
+function phproxy_decode_proxy_cookie_id(string $wire_name): ?array
+{
+    // Double-rawurldecode the wire form to get the human-readable id
+    $decoded = rawurldecode(rawurldecode($wire_name));
+    if (strpos($decoded, 'COOKIE;') !== 0) {
+        return null;
+    }
+    $parts = explode(';', $decoded, 4);
+    if (count($parts) !== 4) {
+        return null;
+    }
+    return [
+        'name'   => $parts[1],
+        'path'   => $parts[2],
+        'domain' => $parts[3],
+    ];
+}
+
+/**
+ * Decode the value half of a proxy-stored cookie (which has the format
+ * "<value>;<secure_flag>" where secure_flag is "secure" or empty).
+ * Walks back the double-rawurlencode applied on the way out.
+ */
+function phproxy_decode_proxy_cookie_value(string $wire_value): array
+{
+    $decoded = rawurldecode(rawurldecode($wire_value));
+    $semi    = strrpos($decoded, ';');
+    if ($semi === false) {
+        return ['value' => $decoded, 'secure' => false];
+    }
+    return [
+        'value'  => substr($decoded, 0, $semi),
+        'secure' => strtolower(trim(substr($decoded, $semi + 1))) === 'secure',
+    ];
+}
+
+/**
  * Drop tracking query parameters (utm_*, fbclid, gclid, ...) from a URL.
  * No-op unless the strip_tracking flag is on. Called both at dispatch
  * (clean the user-typed URL) and during in-page link rewriting.
