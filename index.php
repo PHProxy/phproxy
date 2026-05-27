@@ -372,7 +372,20 @@ if (isset($_GET['action']) && $_SERVER['REQUEST_METHOD'] === 'POST')
             break;
     }
 
-    $_dest = $_script_url . ($_redirect_tab !== '' ? '?tab=' . $_redirect_tab : '');
+    // Honor return_to so saves inside the inline panel on a proxied page
+    // don't bounce the user back to the entry form. Only same-origin URLs
+    // (must start with $_script_base) are accepted, to prevent open-redirect.
+    $_rt = isset($_POST['return_to']) ? (string) $_POST['return_to'] : '';
+    if ($_rt !== '' && strpos($_rt, $_script_base) === 0) {
+        // Set a short-lived hint cookie so the injected panel re-opens on the
+        // same tab the user just edited
+        if ($_redirect_tab !== '') {
+            setcookie('phproxy-panel-tab', $_redirect_tab, time() + 60, '/');
+        }
+        $_dest = $_rt;
+    } else {
+        $_dest = $_script_url . ($_redirect_tab !== '' ? '?tab=' . $_redirect_tab : '');
+    }
     header('Location: ' . $_dest);
     exit(0);
 }
@@ -1401,17 +1414,49 @@ else
     require_once "./files/php/misc.override.php";
     if ($_flags['include_form'] && !isset($_GET['nf']))
     {
-        // PHProxy top bar injected into proxied pages. id-scoped stylesheet
-        // with light + dark variants; inline JS reads localStorage and
-        // prefers-color-scheme so the bar follows the theme the user picked
-        // on the entry form. `all:initial` keeps the host page's CSS from
-        // bleeding in.
+        // PHProxy top bar + inline management panel injected into proxied pages.
+        // The bar is a self-contained id-scoped <style> island (`all:initial`).
+        // The panel uses the regular index.css loaded via <link>; that loads it
+        // into the proxied page's global CSS scope which can in rare cases
+        // clash with the host page's class names — we accept the trade-off
+        // because the alternative is duplicating ~500 lines of CSS here.
         $_url_safe       = htmlspecialchars($_url, ENT_QUOTES);
         $_up_url         = $_script_url . '?' . $_config['url_var_name'] . '=' . encode_url($_url_parts['prev_dir']);
         $_up_url_safe    = htmlspecialchars($_up_url, ENT_QUOTES);
         $_home_safe      = htmlspecialchars($_script_base, ENT_QUOTES);
         $_action_safe    = htmlspecialchars($_script_url, ENT_QUOTES);
         $_url_var_safe   = htmlspecialchars($_config['url_var_name']);
+        $_current_proxy_url  = $_script_url . '?' . $_config['url_var_name'] . '=' . encode_url($_url);
+        $_current_proxy_safe = htmlspecialchars($_current_proxy_url, ENT_QUOTES);
+        $_css_link_safe  = htmlspecialchars($_script_base . 'files/css/index.css', ENT_QUOTES);
+
+        // Panel open/active-tab state — set by the dispatcher right after each
+        // save action so the panel re-opens on the same tab the user just
+        // edited. Self-destructing: we clear the cookie after reading it.
+        $_panel_tab_hint = isset($_COOKIE['phproxy-panel-tab']) ? (string) $_COOKIE['phproxy-panel-tab'] : '';
+        $_panel_open     = $_panel_tab_hint !== '';
+        $_panel_active_tab = in_array($_panel_tab_hint, ['options','cookies','headers','response'], true)
+            ? $_panel_tab_hint
+            : 'cookies';
+        if ($_panel_tab_hint !== '') {
+            setcookie('phproxy-panel-tab', '', time() - 3600, '/');
+        }
+
+        // Response-headers list for the new Response tab (read-only).
+        $_panel_response_pairs = [];
+        foreach ($_response_keys as $_kl => $_ko) {
+            if (!isset($_response_headers[$_kl])) continue;
+            foreach ((array) $_response_headers[$_kl] as $_rv) {
+                $_panel_response_pairs[] = [$_ko, $_rv];
+            }
+        }
+
+        // Cookies + headers in the structure the shared panel template expects
+        $_panel_b = phproxy_panel_buckets();
+        $GLOBALS['_visible_cookies'] = $_panel_b['cookies'];
+        $GLOBALS['_custom_headers']  = $_panel_b['headers'];
+        $GLOBALS['_show_raw_values'] = !empty($_COOKIE['phproxy-show-raw']);
+        $GLOBALS['_ua_presets']      = phproxy_ua_presets();
 
         $_bar_css = <<<CSS
 #phproxy-bar{all:initial;display:block;position:sticky;top:0;z-index:2147483647;box-sizing:border-box;width:100%;margin:0;padding:8px 12px;background:#ffffff;color:#0f172a;font:13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;border-bottom:1px solid #e2e6ec;}
@@ -1429,41 +1474,58 @@ else
 #phproxy-bar a.link{color:#2563eb;text-decoration:none;}
 #phproxy-bar a.link:hover{text-decoration:underline;}
 #phproxy-bar.dark a.link{color:#93c5fd;}
-#phproxy-bar details.menu{position:relative;margin-left:auto;}
-#phproxy-bar details.menu>summary{list-style:none;cursor:pointer;padding:6px;color:inherit;border-radius:6px;display:inline-flex;align-items:center;gap:4px;}
-#phproxy-bar details.menu>summary::-webkit-details-marker{display:none;}
-#phproxy-bar details.menu>summary:hover{background:rgba(0,0,0,.06);}
-#phproxy-bar.dark details.menu>summary:hover{background:rgba(255,255,255,.08);}
-#phproxy-bar details.menu>summary svg{width:16px;height:16px;display:block;stroke:currentColor;fill:none;stroke-width:2;}
-#phproxy-bar details.menu .popup{position:absolute;top:100%;right:0;margin-top:4px;min-width:160px;background:#fff;border:1px solid #e2e6ec;border-radius:8px;box-shadow:0 10px 15px -3px rgba(0,0,0,.1),0 4px 6px -4px rgba(0,0,0,.05);padding:4px;}
-#phproxy-bar.dark details.menu .popup{background:#1e293b;border-color:#334155;}
-#phproxy-bar details.menu .popup a{display:block;padding:6px 10px;color:#0f172a;text-decoration:none;border-radius:4px;}
-#phproxy-bar details.menu .popup a:hover{background:#f1f5f9;}
-#phproxy-bar.dark details.menu .popup a{color:#f1f5f9;}
-#phproxy-bar.dark details.menu .popup a:hover{background:#2a374e;}
+#phproxy-bar label.gear{margin-left:auto;cursor:pointer;padding:6px;color:inherit;border-radius:6px;display:inline-flex;align-items:center;gap:4px;}
+#phproxy-bar label.gear:hover{background:rgba(0,0,0,.06);}
+#phproxy-bar.dark label.gear:hover{background:rgba(255,255,255,.08);}
+#phproxy-bar label.gear svg{width:16px;height:16px;display:block;stroke:currentColor;fill:none;stroke-width:2;}
+#phproxy-panel-toggle{position:absolute;left:-9999px;}
+#phproxy-panel{display:none;position:fixed;top:54px;right:16px;width:min(720px,calc(100vw - 32px));max-height:calc(100vh - 80px);overflow-y:auto;background:var(--bg,#f4f5f7);border:1px solid var(--border,#e2e6ec);border-radius:10px;box-shadow:0 18px 32px -8px rgba(15,23,42,.18);padding:18px 18px 22px;z-index:2147483646;}
+#phproxy-panel-toggle:checked ~ #phproxy-panel{display:block;}
+#phproxy-panel .panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--border,#e2e6ec);}
+#phproxy-panel .panel-head h2{margin:0;font-size:15px;font-weight:600;color:var(--text,#0f172a);letter-spacing:-.01em;}
+#phproxy-panel .panel-head .close{padding:4px 10px;font-size:13px;cursor:pointer;background:transparent;border:1px solid var(--border,#e2e6ec);border-radius:6px;color:var(--text-muted,#64748b);text-decoration:none;}
+#phproxy-panel .panel-head .close:hover{color:var(--text,#0f172a);}
+#phproxy-panel .panel-refresh{margin-top:16px;padding-top:14px;border-top:1px solid var(--border,#e2e6ec);display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap;}
+#phproxy-panel .panel-refresh .button-submit{padding:10px 18px;font-weight:600;}
+#phproxy-panel .panel-refresh small{color:var(--text-muted,#64748b);font-size:12px;align-self:center;}
+@media (max-width:600px){#phproxy-panel{top:auto;bottom:0;right:0;left:0;width:auto;max-height:80vh;border-radius:10px 10px 0 0;}}
 CSS;
 
-        // Inline SVG gear icon
         $_gear = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 0 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 0 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h0a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 0 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v0a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>';
 
+        // Build the inline tabs panel via the shared include
+        $_panel_return_to       = $_current_proxy_url;
+        $_panel_show_response   = true;
+        $_panel_form_id         = '';  // no main URL form in this context
+        ob_start();
+        include './files/php/_panel_tabs.inc.php';
+        $_panel_inner_html = ob_get_clean();
+
+        // Compose the entire injection: bar + (hidden) toggle checkbox + panel
         $_url_form = '<style id="phproxy-bar-style">' . $_bar_css . '</style>'
+            . '<link rel="stylesheet" href="' . $_css_link_safe . '"/>'
+            . '<input type="checkbox" id="phproxy-panel-toggle"' . ($_panel_open ? ' checked' : '') . '/>'
             . '<div id="phproxy-bar">'
             .   '<form class="row" method="post" action="' . $_action_safe . '">'
             .     '<input class="url" id="____' . $_url_var_safe . '" type="text" name="' . $_url_var_safe . '" value="' . $_url_safe . '"/>'
             .     '<button class="go" type="submit" name="go">Go</button>'
             .     '<a class="link" href="' . $_up_url_safe . '">Up</a>'
             .     '<a class="link" href="' . $_home_safe . '">Home</a>'
-            .     '<details class="menu">'
-            .       '<summary aria-label="Settings menu" title="Settings">' . $_gear . '</summary>'
-            .       '<div class="popup">'
-            .         '<a href="' . $_home_safe . 'index.php?tab=options">Options</a>'
-            .         '<a href="' . $_home_safe . 'index.php?tab=cookies">Cookies</a>'
-            .         '<a href="' . $_home_safe . 'index.php?tab=headers">Headers</a>'
-            .       '</div>'
-            .     '</details>'
+            .     '<label class="gear" for="phproxy-panel-toggle" title="Open settings panel" aria-label="Open settings panel">' . $_gear . '</label>'
             .   '</form>'
             . '</div>'
-            . "<script>(function(){try{var s=localStorage.getItem('phproxy-theme');var b=document.getElementById('phproxy-bar');if(!b)return;if(s==='dark')b.classList.add('dark');else if(s!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches)b.classList.add('dark');}catch(e){}})();</script>";
+            . '<div id="phproxy-panel" role="dialog" aria-label="PHProxy settings">'
+            .   '<div class="panel-head">'
+            .     '<h2>Settings</h2>'
+            .     '<label class="close" for="phproxy-panel-toggle">Close</label>'
+            .   '</div>'
+            .   $_panel_inner_html
+            .   '<div class="panel-refresh">'
+            .     '<small>Saves apply on click and reload this URL automatically.</small>'
+            .     '<a class="button-submit" href="' . $_current_proxy_safe . '">Refresh page</a>'
+            .   '</div>'
+            . '</div>'
+            . "<script>(function(){try{var s=localStorage.getItem('phproxy-theme');var b=document.getElementById('phproxy-bar');if(!b)return;if(s==='dark')b.classList.add('dark');else if(s!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches)b.classList.add('dark');}catch(e){}var sel=document.getElementById('ua-preset');var inp=document.getElementById('ua-input');if(sel&&inp){sel.addEventListener('change',function(){if(sel.value==='__custom__'){inp.focus();inp.select();}else{inp.value=sel.value;}});}})();</script>";
 
         $_response_body = preg_replace('#\<\s*body(.*?)\>#si', "$0\n$_url_form" , $_response_body, 1);
     }

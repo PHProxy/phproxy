@@ -3,73 +3,18 @@ if (basename(__FILE__) == basename($_SERVER['PHP_SELF'])) {
     exit(0);
 }
 
-// Cookies the proxy itself owns (settings) — excluded from the user-facing list
-$_proxy_settings_cookies = ['flags', 'userAgent', 'PHPSESSID', 'phproxy-theme', 'phproxy-seed', 'phproxy-seed-ttl', 'phproxy-seed-bits', 'phproxy-show-raw'];
-$_show_raw_values        = !empty($_COOKIE['phproxy-show-raw']);
+$_show_raw_values = !empty($_COOKIE['phproxy-show-raw']);
+$_panel_buckets   = phproxy_panel_buckets();
+$_visible_cookies = $_panel_buckets['cookies'];
+$_custom_headers  = $_panel_buckets['headers'];
+$_current_ua      = isset($_COOKIE['userAgent']) ? $_COOKIE['userAgent'] : '';
+$_ua_presets      = phproxy_ua_presets();
 
-// Parse the raw Cookie header so we get the exact wire-form names the
-// browser is storing. $_COOKIE keys go through PHP's legacy dot→underscore
-// mangling which would prevent us from emitting matching Set-Cookie deletes.
-$_raw_cookies = phproxy_raw_cookies();
-
-$_visible_cookies = [];  // wire_name => ['display_name','host','path','value','secure','is_proxy']
-$_custom_headers  = [];  // header_name => header_value
-foreach ($_raw_cookies as $_wire_name => $_wire_value) {
-    // wire names of settings/header cookies don't contain %25, so URL-decoding is identity
-    if (in_array($_wire_name, $_proxy_settings_cookies, true)) continue;
-    if (strpos($_wire_name, 'hdr_') === 0) {
-        $_custom_headers[substr($_wire_name, 4)] = rawurldecode($_wire_value);
-        continue;
-    }
-
-    $_parsed = phproxy_decode_proxy_cookie_id($_wire_name);
-    if ($_parsed !== null) {
-        $_val = phproxy_decode_proxy_cookie_value($_wire_value);
-        $_visible_cookies[$_wire_name] = [
-            'display_name' => $_parsed['name'],
-            'host'         => ltrim($_parsed['domain'], '.'),
-            'domain'       => $_parsed['domain'],
-            'path'         => $_parsed['path'],
-            'value'        => $_val['value'],
-            'raw_value'    => $_wire_value,
-            'raw_name'     => $_wire_name,
-            'secure'       => $_val['secure'],
-            'is_proxy'     => true,
-        ];
-    } else {
-        $_visible_cookies[$_wire_name] = [
-            'display_name' => rawurldecode($_wire_name),
-            'host'         => '',
-            'domain'       => '',
-            'path'         => '',
-            'value'        => rawurldecode($_wire_value),
-            'raw_value'    => $_wire_value,
-            'raw_name'     => $_wire_name,
-            'secure'       => false,
-            'is_proxy'     => false,
-        ];
-    }
-}
-
-$_current_ua    = isset($_COOKIE['userAgent']) ? $_COOKIE['userAgent'] : '';
-$_active_tab    = isset($_GET['tab']) ? (string) $_GET['tab'] : 'options';
-$_valid_tabs    = ['options' => 1, 'cookies' => 1, 'headers' => 1];
+$_active_tab = isset($_GET['tab']) ? (string) $_GET['tab'] : 'options';
+$_valid_tabs = ['options' => 1, 'cookies' => 1, 'headers' => 1];
 if (!isset($_valid_tabs[$_active_tab])) $_active_tab = 'options';
-
-$_ua_presets = [
-    ''  => '— Default browser User-Agent —',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36' => 'Chrome on Windows',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15' => 'Safari on macOS',
-    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1' => 'Safari on iPhone',
-    'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36' => 'Chrome on Android',
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36' => 'Chrome on Linux',
-    'Mozilla/5.0 (X11; CrOS x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36' => 'Chrome on ChromeOS',
-    'curl/8.5.0' => 'curl 8.5',
-    'Wget/1.21.4' => 'wget 1.21',
-    '.' => '★ Use my real browser User-Agent',
-    '-' => '★ Send no User-Agent at all',
-];
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -163,236 +108,17 @@ switch ($data['category']) {
 
     <?php if (in_array(0, $GLOBALS['_frozen_flags'])): ?>
     <div class="card">
-        <div class="tabs-wrap">
-            <input type="radio" name="tab" id="tab-options"<?php echo $_active_tab === 'options' ? ' checked' : ''; ?>/>
-            <input type="radio" name="tab" id="tab-cookies"<?php echo $_active_tab === 'cookies' ? ' checked' : ''; ?>/>
-            <input type="radio" name="tab" id="tab-headers"<?php echo $_active_tab === 'headers' ? ' checked' : ''; ?>/>
-
-            <nav class="tabs">
-                <label for="tab-options">Options</label>
-                <label for="tab-cookies">Cookies <span class="tab-count"><?php echo count($_visible_cookies); ?></span></label>
-                <label for="tab-headers">Headers <span class="tab-count"><?php echo count($_custom_headers); ?></span></label>
-            </nav>
-
-            <section class="tab-panel" data-tab="options">
 <?php
-$_option_groups = [
-    'Browsing' => ['include_form', 'remove_scripts', 'show_images', 'strip_iframes', 'block_3p', 'block_fonts', 'block_media'],
-    'Privacy'  => ['show_referer', 'send_dnt', 'send_gpc', 'strip_title', 'strip_meta', 'strip_tracking'],
-    'Cookies'  => ['accept_cookies', 'session_cookies'],
-];
-foreach ($_option_groups as $_group_name => $_group_flags):
-    $_visible = false;
-    foreach ($_group_flags as $_f) {
-        if (!$GLOBALS['_frozen_flags'][$_f]) { $_visible = true; break; }
-    }
-    if (!$_visible) continue;
+$GLOBALS['_show_raw_values']  = $_show_raw_values;
+$GLOBALS['_visible_cookies']  = $_visible_cookies;
+$GLOBALS['_custom_headers']   = $_custom_headers;
+$GLOBALS['_ua_presets']       = $_ua_presets;
+$_panel_return_to     = '';
+$_panel_show_response = false;
+$_panel_active_tab    = $_active_tab;
+$_panel_form_id       = 'proxy-main-form';
+include __DIR__ . '/_panel_tabs.inc.php';
 ?>
-                <fieldset class="option-group">
-                    <legend><?php echo htmlspecialchars($_group_name); ?></legend>
-                    <ul class="prx-opt-menu">
-<?php foreach ($_group_flags as $_f): ?>
-<?php if (!$GLOBALS['_frozen_flags'][$_f]): ?>
-                        <li class="option"><label><input form="proxy-main-form" type="checkbox" name="<?php echo $GLOBALS['_config']['flags_var_name']; ?>[<?php echo $_f; ?>]"<?php echo $GLOBALS['_flags'][$_f] ? ' checked' : ''; ?>/><span><?php echo $GLOBALS['_labels'][$_f][0]; ?></span></label></li>
-<?php endif; ?>
-<?php endforeach; ?>
-                    </ul>
-                </fieldset>
-<?php endforeach; ?>
-<?php
-$_url_encoding = 'none';
-if (!empty($GLOBALS['_flags']['encrypt_url']))      $_url_encoding = 'encrypted';
-elseif ($GLOBALS['_flags']['rotate13'])             $_url_encoding = 'rot13';
-elseif ($GLOBALS['_flags']['base64_encode'])        $_url_encoding = 'base64';
-?>
-<?php
-$_seed_ttl  = phproxy_seed_ttl();
-$_seed_bits = phproxy_seed_bits();
-$_seed_present = !empty($_COOKIE['phproxy-seed']);
-?>
-                <fieldset class="option-group">
-                    <legend>Address bar</legend>
-                    <div class="radio-row">
-                        <span class="radio-row-label">URL encoding</span>
-                        <label><input form="proxy-main-form" type="radio" name="<?php echo $GLOBALS['_config']['flags_var_name']; ?>[__url_enc]" value="none"<?php echo $_url_encoding === 'none' ? ' checked' : ''; ?>/> None</label>
-                        <label><input form="proxy-main-form" type="radio" name="<?php echo $GLOBALS['_config']['flags_var_name']; ?>[__url_enc]" value="rot13"<?php echo $_url_encoding === 'rot13' ? ' checked' : ''; ?>/> ROT13</label>
-                        <label><input form="proxy-main-form" type="radio" name="<?php echo $GLOBALS['_config']['flags_var_name']; ?>[__url_enc]" value="base64"<?php echo $_url_encoding === 'base64' ? ' checked' : ''; ?>/> Base64</label>
-                        <label><input form="proxy-main-form" type="radio" name="<?php echo $GLOBALS['_config']['flags_var_name']; ?>[__url_enc]" value="encrypted"<?php echo $_url_encoding === 'encrypted' ? ' checked' : ''; ?>/> Encrypted <span class="hint">(rotating key)</span></label>
-                    </div>
-
-                    <div class="seed-config">
-                        <p class="tab-help">Encrypted mode wraps each URL with a fresh AES-CTR ciphertext keyed off a random session seed. Once the seed rotates, any URL recorded earlier (logs, history, referers) becomes useless.</p>
-                        <div class="seed-row">
-                            <form class="seed-mini" method="post" action="?action=set-seed-ttl">
-                                <label class="seed-mini-label">Seed lifetime <span class="hint">(seconds)</span></label>
-                                <input type="number" name="seedTtl" min="60" max="604800" step="60" value="<?php echo (int) $_seed_ttl; ?>"/>
-                                <button class="button-cancel" type="submit">Save</button>
-                            </form>
-                            <form class="seed-mini" method="post" action="?action=set-seed-bits">
-                                <label class="seed-mini-label">Key length</label>
-                                <select name="seedBits">
-                                    <option value="128"<?php echo $_seed_bits === 128 ? ' selected' : ''; ?>>AES-128</option>
-                                    <option value="192"<?php echo $_seed_bits === 192 ? ' selected' : ''; ?>>AES-192</option>
-                                    <option value="256"<?php echo $_seed_bits === 256 ? ' selected' : ''; ?>>AES-256</option>
-                                </select>
-                                <button class="button-cancel" type="submit">Save</button>
-                            </form>
-                            <form class="seed-mini" method="post" action="?action=rotate-seed">
-                                <label class="seed-mini-label">Seed <span class="hint"><?php echo $_seed_present ? 'live' : 'not set'; ?></span></label>
-                                <button class="button-ghost" type="submit" title="Generate a new random seed now">Rotate now</button>
-                            </form>
-                        </div>
-                    </div>
-                </fieldset>
-            </section>
-
-            <section class="tab-panel" data-tab="cookies">
-                <div class="tab-toolbar">
-                    <p class="tab-help">Cookies held for proxied sites. Click a row to edit any attribute. Settings cookies (theme, flags, User-Agent, seed) are excluded.</p>
-                    <form class="toolbar-toggle" method="post" action="?action=toggle-raw">
-                        <button type="submit" class="button-cancel" title="Switch between URL-decoded and raw wire-form values"><?php echo $_show_raw_values ? 'Showing: raw' : 'Showing: decoded'; ?></button>
-                    </form>
-                </div>
-<?php if (empty($_visible_cookies)): ?>
-                <ul class="kv-list"><li class="empty">No cookies yet</li></ul>
-<?php else: ?>
-                <ul class="kv-list">
-<?php
-foreach ($_visible_cookies as $_wire => $_c):
-    $_disp_value = $_show_raw_values ? $_c['raw_value']   : $_c['value'];
-    $_disp_name  = $_show_raw_values ? $_c['raw_name']    : $_c['display_name'];
-?>
-                    <li class="kv-row">
-                        <details class="kv-card">
-                            <summary>
-                                <span class="kv-display">
-                                    <?php if ($_c['is_proxy']): ?><span class="kv-host"><?php echo htmlspecialchars($_c['host']); ?></span><span class="kv-sep">·</span><?php endif; ?>
-                                    <span class="kv-name"><?php echo htmlspecialchars($_disp_name); ?></span><span class="kv-sep">=</span><span class="kv-val"><?php echo htmlspecialchars(mb_strimwidth($_disp_value, 0, 72, '…')); ?></span>
-                                </span>
-                                <span class="kv-chevron" aria-hidden="true">▾</span>
-                            </summary>
-                            <form class="kv-edit kv-edit-cookie" method="post" action="?action=edit-cookie">
-                                <input type="hidden" name="name" value="<?php echo htmlspecialchars($_wire); ?>"/>
-                                <label class="kv-edit-field"><span>Name</span><input type="text" name="cookieName" value="<?php echo htmlspecialchars($_c['display_name']); ?>" autocomplete="off"/></label>
-                                <label class="kv-edit-field kv-edit-wide"><span>Value</span><input type="text" name="cookieValue" value="<?php echo htmlspecialchars($_c['value']); ?>" autocomplete="off"/></label>
-                                <label class="kv-edit-field"><span>Host</span><input type="text" name="cookieDomain" value="<?php echo $_c['is_proxy'] ? htmlspecialchars($_c['domain']) : ''; ?>" placeholder=".example.com" autocomplete="off"/></label>
-                                <label class="kv-edit-field"><span>Path</span><input type="text" name="cookiePath" value="<?php echo htmlspecialchars($_c['path'] ?: '/'); ?>" placeholder="/" autocomplete="off"/></label>
-                                <label class="kv-edit-field"><span>Expires <span class="hint">(days, 0 = session)</span></span><input type="number" name="cookieExpires" value="30" min="0" max="3650"/></label>
-                                <label class="kv-edit-field"><span>SameSite</span>
-                                    <select name="cookieSameSite">
-                                        <option value="">(default)</option>
-                                        <option value="Lax">Lax</option>
-                                        <option value="Strict">Strict</option>
-                                        <option value="None">None</option>
-                                    </select>
-                                </label>
-                                <div class="kv-edit-checks">
-                                    <label class="kv-edit-check"><input type="checkbox" name="cookieSecure"<?php echo $_c['secure'] ? ' checked' : ''; ?>/> Secure</label>
-                                    <label class="kv-edit-check"><input type="checkbox" name="cookieHttpOnly"/> HttpOnly</label>
-                                </div>
-                                <div class="kv-edit-actions">
-                                    <button class="button-submit" type="submit">Save</button>
-                                </div>
-                            </form>
-                        </details>
-                        <form class="kv-delete" method="post" action="?action=delete-cookie">
-                            <input type="hidden" name="name" value="<?php echo htmlspecialchars($_wire); ?>"/>
-                            <button class="button-icon" type="submit" title="Delete cookie" aria-label="Delete <?php echo htmlspecialchars($_c['display_name']); ?>">&times;</button>
-                        </form>
-                    </li>
-<?php endforeach; ?>
-                </ul>
-<?php endif; ?>
-                <details class="kv-card kv-card-add">
-                    <summary><span class="kv-display"><span class="kv-name">+ Add a cookie</span></span><span class="kv-chevron" aria-hidden="true">▾</span></summary>
-                    <form class="kv-edit kv-edit-cookie" method="post" action="?action=add-cookie">
-                        <label class="kv-edit-field"><span>Name</span><input type="text" name="cookieName" placeholder="session_id" autocomplete="off" required/></label>
-                        <label class="kv-edit-field kv-edit-wide"><span>Value</span><input type="text" name="cookieValue" placeholder="abc123" autocomplete="off"/></label>
-                        <label class="kv-edit-field"><span>Host <span class="hint">(empty = proxy domain)</span></span><input type="text" name="cookieDomain" placeholder=".example.com" autocomplete="off"/></label>
-                        <label class="kv-edit-field"><span>Path</span><input type="text" name="cookiePath" value="/" placeholder="/" autocomplete="off"/></label>
-                        <label class="kv-edit-field"><span>Expires <span class="hint">(days, 0 = session)</span></span><input type="number" name="cookieExpires" value="30" min="0" max="3650"/></label>
-                        <label class="kv-edit-field"><span>SameSite</span>
-                            <select name="cookieSameSite">
-                                <option value="">(default)</option>
-                                <option value="Lax" selected>Lax</option>
-                                <option value="Strict">Strict</option>
-                                <option value="None">None</option>
-                            </select>
-                        </label>
-                        <div class="kv-edit-checks">
-                            <label class="kv-edit-check"><input type="checkbox" name="cookieSecure"/> Secure</label>
-                            <label class="kv-edit-check"><input type="checkbox" name="cookieHttpOnly"/> HttpOnly</label>
-                        </div>
-                        <div class="kv-edit-actions">
-                            <button class="button-submit" type="submit">Add cookie</button>
-                        </div>
-                    </form>
-                </details>
-                <form class="tab-actions" method="post" action="?action=clear-cookies">
-                    <button class="button-ghost" type="submit">Clear all cookies</button>
-                </form>
-            </section>
-
-            <section class="tab-panel" data-tab="headers">
-                <p class="section-label">User-Agent</p>
-                <p class="tab-help">Sent on every proxied request. <code>.</code> means &ldquo;use my real browser&rsquo;s User-Agent&rdquo;, <code>-</code> means &ldquo;send no User-Agent at all&rdquo;.</p>
-                <form class="ua-form" method="post" action="?action=set-ua">
-                    <div class="ua-picker">
-                        <select id="ua-preset" aria-label="User-Agent preset">
-<?php foreach ($_ua_presets as $_val => $_lbl): ?>
-                            <option value="<?php echo htmlspecialchars($_val); ?>"<?php echo $_current_ua === $_val ? ' selected' : ''; ?>><?php echo htmlspecialchars($_lbl); ?></option>
-<?php endforeach; ?>
-                            <option value="__custom__"<?php echo (!array_key_exists($_current_ua, $_ua_presets) && $_current_ua !== '') ? ' selected' : ''; ?>>Custom…</option>
-                        </select>
-                        <input type="text" id="ua-input" name="userAgent" value="<?php echo htmlspecialchars($_current_ua); ?>" placeholder="Custom User-Agent string" autocomplete="off"/>
-                    </div>
-                    <div class="tab-actions" style="margin-top:12px">
-                        <button class="button-submit" type="submit">Save User-Agent</button>
-                    </div>
-                </form>
-
-                <hr class="divider"/>
-
-                <p class="section-label">Custom headers</p>
-                <p class="tab-help">Extra HTTP headers sent on every outbound request. Header names: ASCII letters, digits, hyphens.</p>
-<?php if (empty($_custom_headers)): ?>
-                <ul class="kv-list"><li class="empty">No custom headers</li></ul>
-<?php else: ?>
-                <ul class="kv-list">
-<?php foreach ($_custom_headers as $_h_name => $_h_value): ?>
-                    <li class="kv-row">
-                        <details class="kv-card">
-                            <summary>
-                                <span class="kv-display">
-                                    <span class="kv-name"><?php echo htmlspecialchars($_h_name); ?></span><span class="kv-sep">:</span><span class="kv-val"><?php echo htmlspecialchars(mb_strimwidth($_h_value, 0, 72, '…')); ?></span>
-                                </span>
-                                <span class="kv-chevron" aria-hidden="true">▾</span>
-                            </summary>
-                            <form class="kv-edit" method="post" action="?action=edit-header">
-                                <input type="hidden" name="oldName" value="<?php echo htmlspecialchars($_h_name); ?>"/>
-                                <label class="kv-edit-field"><span>Name</span><input type="text" name="headerName" value="<?php echo htmlspecialchars($_h_name); ?>" pattern="[A-Za-z0-9-]+" autocomplete="off"/></label>
-                                <label class="kv-edit-field"><span>Value</span><input type="text" name="headerValue" value="<?php echo htmlspecialchars($_h_value); ?>" autocomplete="off"/></label>
-                                <div class="kv-edit-actions">
-                                    <button class="button-submit" type="submit">Save</button>
-                                </div>
-                            </form>
-                        </details>
-                        <form class="kv-delete" method="post" action="?action=delete-header">
-                            <input type="hidden" name="name" value="<?php echo htmlspecialchars($_h_name); ?>"/>
-                            <button class="button-icon" type="submit" title="Delete header" aria-label="Delete header <?php echo htmlspecialchars($_h_name); ?>">&times;</button>
-                        </form>
-                    </li>
-<?php endforeach; ?>
-                </ul>
-<?php endif; ?>
-                <p class="section-label">Add a header</p>
-                <form class="kv-add" method="post" action="?action=add-header">
-                    <input type="text" name="headerAddName" placeholder="Accept-Language" pattern="[A-Za-z0-9-]+" autocomplete="off"/>
-                    <input type="text" name="headerAddValue" placeholder="en-GB,en;q=0.9" autocomplete="off"/>
-                    <button type="submit">Add</button>
-                </form>
-            </section>
-        </div>
     </div>
     <?php endif; ?>
 <?php elseif ($data['category'] == 'auth'): ?>

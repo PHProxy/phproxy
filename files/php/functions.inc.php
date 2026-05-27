@@ -151,6 +151,74 @@ function phproxy_decode_proxy_cookie_value(string $wire_value): array
 }
 
 /**
+ * Shared User-Agent preset list used by both the entry form's Headers tab
+ * and the inline panel injected onto proxied pages.
+ */
+function phproxy_ua_presets(): array
+{
+    return [
+        ''  => '— Default browser User-Agent —',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36' => 'Chrome on Windows',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15' => 'Safari on macOS',
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1' => 'Safari on iPhone',
+        'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36' => 'Chrome on Android',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36' => 'Chrome on Linux',
+        'Mozilla/5.0 (X11; CrOS x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36' => 'Chrome on ChromeOS',
+        'curl/8.5.0'  => 'curl 8.5',
+        'Wget/1.21.4' => 'wget 1.21',
+        '.' => '★ Use my real browser User-Agent',
+        '-' => '★ Send no User-Agent at all',
+    ];
+}
+
+/**
+ * Parse $_SERVER['HTTP_COOKIE'] and bucket the non-settings entries into
+ * the structure the panel template expects. Used by both the entry form
+ * and the inline panel injection.
+ */
+function phproxy_panel_buckets(): array
+{
+    $settings = ['flags', 'userAgent', 'PHPSESSID', 'phproxy-theme', 'phproxy-seed', 'phproxy-seed-ttl', 'phproxy-seed-bits', 'phproxy-show-raw', 'phproxy-panel-tab'];
+    $visible  = [];
+    $headers  = [];
+    foreach (phproxy_raw_cookies() as $wire => $val) {
+        if (in_array($wire, $settings, true)) continue;
+        if (strpos($wire, 'hdr_') === 0) {
+            $headers[substr($wire, 4)] = rawurldecode($val);
+            continue;
+        }
+        $parsed = phproxy_decode_proxy_cookie_id($wire);
+        if ($parsed !== null) {
+            $v = phproxy_decode_proxy_cookie_value($val);
+            $visible[$wire] = [
+                'display_name' => $parsed['name'],
+                'host'         => ltrim($parsed['domain'], '.'),
+                'domain'       => $parsed['domain'],
+                'path'         => $parsed['path'],
+                'value'        => $v['value'],
+                'raw_value'    => $val,
+                'raw_name'     => $wire,
+                'secure'       => $v['secure'],
+                'is_proxy'     => true,
+            ];
+        } else {
+            $visible[$wire] = [
+                'display_name' => rawurldecode($wire),
+                'host'         => '',
+                'domain'       => '',
+                'path'         => '',
+                'value'        => rawurldecode($val),
+                'raw_value'    => $val,
+                'raw_name'     => $wire,
+                'secure'       => false,
+                'is_proxy'     => false,
+            ];
+        }
+    }
+    return ['cookies' => $visible, 'headers' => $headers];
+}
+
+/**
  * Anonymity seed configuration — TTL (seconds) and key length (bytes).
  * Both adjustable from the Options tab; stored in long-lived settings
  * cookies that survive seed rotation.
