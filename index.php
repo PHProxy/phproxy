@@ -153,6 +153,24 @@ $_bindip           = 'default';
 require_once "./files/php/functions.inc.php";
 
 //
+// CLEAR COOKIES action (from the Cookies tab)
+// Expires every non-settings cookie under the proxy's own domain and bounces
+// back to the entry form.
+//
+if (isset($_GET['action']) && $_GET['action'] === 'clear-cookies' && $_SERVER['REQUEST_METHOD'] === 'POST')
+{
+    $_settings = ['flags', 'userAgent', 'PHPSESSID'];
+    foreach ($_COOKIE as $_ck_name => $_ck_value)
+    {
+        if (in_array($_ck_name, $_settings, true)) continue;
+        setcookie($_ck_name, '', time() - 3600, '/');
+        setcookie($_ck_name, '', time() - 3600, '/', '.' . $_http_host);
+    }
+    header('Location: ' . $_script_url);
+    exit(0);
+}
+
+//
 // SET FLAGS
 //
 
