@@ -214,6 +214,25 @@ if ($_system['stripslashes'])
 }
 
 //
+// PATH-STYLE ROUTING (#24): phproxy.example/https://target/path
+// Apache collapses consecutive slashes in URL paths, so we accept
+// "http:/target" (single slash) and restore "http://target".
+//
+
+if (!isset($_POST[$_config['url_var_name']])
+    && !isset($_GET[$_config['url_var_name']])
+    && !isset($_GET[$_config['get_form_name']])
+    && !empty($_SERVER['PATH_INFO'])
+    && preg_match('#^/(https?):/+(.*)$#i', $_SERVER['PATH_INFO'], $_path_match))
+{
+    $_path_target = $_path_match[1] . '://' . $_path_match[2];
+    if (!empty($_SERVER['QUERY_STRING'])) {
+        $_path_target .= (strpos($_path_target, '?') === false ? '?' : '&') . $_SERVER['QUERY_STRING'];
+    }
+    $_GET[$_config['url_var_name']] = encode_url($_path_target);
+}
+
+//
 // FIGURE OUT WHAT TO DO (POST URL-form submit, GET form request, regular request, basic auth, cookie manager, show URL-form)
 //
 
@@ -353,6 +372,13 @@ do
 
     //
     // SET REQUEST HEADERS
+    //
+    // Anonymity invariant: the outbound header set is built from scratch
+    // out of a known-safe whitelist (method, path, Host, User-Agent, Accept,
+    // optional Referer, Cookie, Authorization, and POST body headers).
+    // We never forward client-identifying $_SERVER['HTTP_X_FORWARDED_FOR'],
+    // 'HTTP_X_REAL_IP', 'HTTP_VIA', 'HTTP_FORWARDED', or any other inbound
+    // proxy header to the upstream. Targets see this server's IP only.
     //
 
     $_request_headers  = $_request_method . ' ' . $_url_parts['path'];

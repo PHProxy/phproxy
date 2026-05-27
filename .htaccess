@@ -1,0 +1,13 @@
+# PHProxy path-style routing (#24)
+# Forward /http(s):/target/... to index.php with PATH_INFO set.
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Don't rewrite real files or directories
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+
+    # /http(s):/target/... -> /index.php/http(s):/target/...
+    RewriteRule ^(https?:/.*)$ index.php/$1 [L,QSA]
+</IfModule>
