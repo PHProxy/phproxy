@@ -10,8 +10,10 @@
  * matching the entry form's behavior.
  */
 
-/* Position + open/close toggle. The panel is a fixed overlay; show/hide is
- * driven by the sibling #phproxy-panel-toggle checkbox via ~. */
+/* Full-viewport overlay below the sticky bar. The panel covers the entire
+ * window from the bar down; the host page's content is hidden behind it
+ * until the user closes the panel. Show/hide is driven by the sibling
+ * #phproxy-panel-toggle checkbox via ~. */
 #phproxy-panel {
     /* Reset every inheritable property so the host page can't bleed in.
      * `all: initial` forces this element to its initial styles regardless
@@ -20,15 +22,13 @@
     all: initial;
     display: none;
     position: fixed;
-    top: 54px;
-    right: 16px;
-    width: min(720px, calc(100vw - 32px));
-    max-height: calc(100vh - 80px);
+    inset: 54px 0 0 0;
     overflow-y: auto;
     z-index: 2147483646;
     box-sizing: border-box;
-    padding: 18px 18px 22px;
-    border-radius: 10px;
+    padding: 24px 0 40px;
+    border-top: 1px solid var(--border);
+    border-radius: 0;
 
     --bg: #f4f5f7;
     --surface: #ffffff;
@@ -86,6 +86,14 @@
     --success-soft: #064e3b;
     --shadow: 0 18px 32px -8px rgba(0, 0, 0, .55);
     color-scheme: dark;
+}
+
+/* Inner wrapper centers content on wide screens so the forms don't
+ * stretch edge-to-edge. */
+#phproxy-panel > .panel-inner {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 0 24px;
 }
 
 /* Panel chrome */
