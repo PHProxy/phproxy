@@ -1,20 +1,21 @@
 <?php
 
 /**
+ * PHProxy v1.2.0
  *
- * PHProxy
+ * Single-file web HTTP/HTTPS proxy in PHP. Drop into any PHP 8.1+ web root
+ * and open it — no dependencies, no build step, no `vendor/`, no `files/`
+ * directory. Works under any filename (rename to proxy.php if you like).
  *
- * @author              Miglen; PhoenixPeca; Biojet1
- * @copyright           2002-2007 A.A. (whitefyre)
- * @description         Web based http proxy written on php.
- * @url                 https://phproxy.github.io
- * @license             GNU GPL v3
- * @repo                https://github.com/phproxy/phproxy
- * @docs                http://phproxy.readthedocs.org
- *
+ * @version    v1.2.0
+ * @author     Miglen Evlogiev (revive), PhoenixPeca, Biojet1, Quix0r, dacendo
+ * @copyright  2002-2007 A.A. (whitefyre); 2015-2019 contributors; 2025-2026 revive
+ * @license    GNU GPL v3
+ * @repo       https://github.com/PHProxy/phproxy
  */
 
 /* PRODUCTIVE: */ error_reporting(0);
+// DEVELOP: error_reporting(E_ALL); ini_set('display_errors', '1');
 
 // --- ASSET DISPATCHER --------------------------------------------------
 // Serves the proxy's own CSS via ?asset=<name>. Keeps the script
@@ -29,7 +30,6 @@ if (isset($_GET['asset'])) {
     http_response_code(404);
     exit;
 }
-// DEVELOP: error_reporting(E_ALL); ini_set('display_errors', '1');
 
 //
 // CONFIGURABLE OPTIONS
@@ -144,7 +144,7 @@ $_proxify           =
                         'application/xhtml+xml' => 1,
                         'text/css'              => 1,
                     ];
-$_version           = 'v1.1.1';
+$_version           = 'v1.2.0';
 $_http_host         = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : (isset($_SERVER['SERVER_NAME']) ? $_SERVER['SERVER_NAME'] : 'localhost');
 // https://stackoverflow.com/questions/4504831/serverhttp-host-contains-port-number-too
 $pos = strpos($_http_host, ':');
