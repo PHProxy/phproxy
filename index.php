@@ -247,11 +247,13 @@ if (isset($_GET['api']) && $_GET['api'] === 'cert') {
         echo json_encode(['ok' => false, 'error' => 'Invalid port (1–65535)']);
         exit;
     }
+    // First handshake — let OpenSSL negotiate freely so we capture the
+    // server's preferred TLS version + cipher AND the peer cert chain.
     $ctx = stream_context_create([
         'ssl' => [
             'capture_peer_cert'       => true,
             'capture_peer_cert_chain' => true,
-            'verify_peer'             => false,  // we want to inspect even broken / expired certs
+            'verify_peer'             => false,
             'verify_peer_name'        => false,
             'SNI_enabled'             => true,
             'peer_name'               => $host,
@@ -264,7 +266,8 @@ if (isset($_GET['api']) && $_GET['api'] === 'cert') {
         echo json_encode(['ok' => false, 'host' => $host, 'port' => $port, 'error' => $errstr ?: 'SSL handshake failed', 'errno' => (int) $errno, 'latency_ms' => $ms]);
         exit;
     }
-    $params = stream_context_get_params($sock);
+    $meta_main = stream_get_meta_data($sock);
+    $params    = stream_context_get_params($sock);
     fclose($sock);
     $leaf  = $params['options']['ssl']['peer_certificate']       ?? null;
     $chain = $params['options']['ssl']['peer_certificate_chain'] ?? [];
@@ -284,6 +287,23 @@ if (isset($_GET['api']) && $_GET['api'] === 'cert') {
                 elseif ($entry !== '')                  $san[] = $entry;
             }
         }
+        // Extract public key type + size if possible.
+        $key_type = ''; $key_bits = 0; $key_curve = '';
+        $pub = @openssl_pkey_get_public($cert);
+        if ($pub !== false) {
+            $details = @openssl_pkey_get_details($pub);
+            if (is_array($details)) {
+                $key_bits = (int) ($details['bits'] ?? 0);
+                $type_const = $details['type'] ?? -1;
+                if ($type_const === OPENSSL_KEYTYPE_RSA) $key_type = 'RSA';
+                elseif ($type_const === OPENSSL_KEYTYPE_DSA) $key_type = 'DSA';
+                elseif ($type_const === OPENSSL_KEYTYPE_DH)  $key_type = 'DH';
+                elseif (defined('OPENSSL_KEYTYPE_EC') && $type_const === OPENSSL_KEYTYPE_EC) {
+                    $key_type  = 'EC';
+                    $key_curve = (string) ($details['ec']['curve_name'] ?? '');
+                }
+            }
+        }
         $valid_from = $p['validFrom_time_t'] ?? 0;
         $valid_to   = $p['validTo_time_t']   ?? 0;
         return [
@@ -298,6 +318,9 @@ if (isset($_GET['api']) && $_GET['api'] === 'cert') {
             'days_left'     => $valid_to ? (int) floor(($valid_to - time()) / 86400) : 0,
             'san'           => $san,
             'sig_algorithm' => $p['signatureTypeSN'] ?? '',
+            'key_type'      => $key_type,
+            'key_bits'      => $key_bits,
+            'key_curve'     => $key_curve,
         ];
     };
     $cert_info  = $parse_cert($leaf);
@@ -306,10 +329,66 @@ if (isset($_GET['api']) && $_GET['api'] === 'cert') {
         $ci = $parse_cert($c);
         if ($ci !== null) $chain_info[] = $ci;
     }
+
+    // Probe TLS versions individually. For each, force the version via
+    // crypto_method and record which the server actually accepts plus
+    // the cipher it negotiates. ~4 extra ~100-500ms handshakes.
+    $tls_probes = [
+        'TLSv1.3' => defined('STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT') ? STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT : 0,
+        'TLSv1.2' => defined('STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT') ? STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT : 0,
+        'TLSv1.1' => defined('STREAM_CRYPTO_METHOD_TLSv1_1_CLIENT') ? STREAM_CRYPTO_METHOD_TLSv1_1_CLIENT : 0,
+        'TLSv1.0' => defined('STREAM_CRYPTO_METHOD_TLSv1_CLIENT')   ? STREAM_CRYPTO_METHOD_TLSv1_CLIENT   : 0,
+    ];
+    $tls_results = [];
+    foreach ($tls_probes as $label => $method) {
+        if ($method === 0) {
+            $tls_results[] = ['version' => $label, 'supported' => false, 'error' => 'OpenSSL on this PHP build cannot speak ' . $label];
+            continue;
+        }
+        $pctx = stream_context_create([
+            'ssl' => [
+                'verify_peer'      => false,
+                'verify_peer_name' => false,
+                'SNI_enabled'      => true,
+                'peer_name'        => $host,
+                'crypto_method'    => $method,
+            ],
+        ]);
+        $pt0 = microtime(true);
+        $psock = @stream_socket_client("ssl://$host:$port", $en, $es, 5, STREAM_CLIENT_CONNECT, $pctx);
+        $pms = (int) ((microtime(true) - $pt0) * 1000);
+        if ($psock === false) {
+            $tls_results[] = ['version' => $label, 'supported' => false, 'error' => $es ?: 'handshake refused', 'latency_ms' => $pms];
+            continue;
+        }
+        $pmeta  = stream_get_meta_data($psock);
+        @fclose($psock);
+        $crypto = $pmeta['crypto'] ?? [];
+        $tls_results[] = [
+            'version'        => $label,
+            'supported'      => true,
+            'cipher_name'    => (string) ($crypto['cipher_name']    ?? ''),
+            'cipher_bits'    => (int)    ($crypto['cipher_bits']    ?? 0),
+            'cipher_version' => (string) ($crypto['cipher_version'] ?? ''),
+            'protocol'       => (string) ($crypto['protocol']       ?? ''),
+            'latency_ms'     => $pms,
+        ];
+    }
+
+    // Negotiated handshake summary (what the server picked when given free choice).
+    $main_crypto = $meta_main['crypto'] ?? [];
+
     echo json_encode([
         'ok'           => true,
         'host'         => $host,
         'port'         => $port,
+        'negotiated'   => [
+            'protocol'       => (string) ($main_crypto['protocol']       ?? ''),
+            'cipher_name'    => (string) ($main_crypto['cipher_name']    ?? ''),
+            'cipher_bits'    => (int)    ($main_crypto['cipher_bits']    ?? 0),
+            'cipher_version' => (string) ($main_crypto['cipher_version'] ?? ''),
+        ],
+        'tls_versions' => $tls_results,
         'leaf'         => $cert_info,
         'chain'        => $chain_info,
         'chain_length' => count($chain_info),
@@ -320,11 +399,9 @@ if (isset($_GET['api']) && $_GET['api'] === 'cert') {
 
 // --- IP INFO API (?api=ipinfo[&ip=1.2.3.4]) ------------------------------
 // Returns information about the client, the server, and the server's
-// outgoing IP — plus ASN / country / AS-name / BGP prefix for each, looked
-// up from Team Cymru's public WHOIS service over a plain TCP socket. No
-// library, no API key, no per-IP HTTP roundtrip. City data is NOT
-// returned: it requires a GeoIP database (MaxMind GeoLite2 etc.) which
-// we don't ship to keep the project a single self-contained file.
+// outgoing IP — plus reverse DNS, the X-Forwarded-For chain, request
+// headers and host info. Pure local PHP — no external lookups, no
+// library, no API key. Geo / ASN / city are intentionally not included.
 if (isset($_GET['api']) && $_GET['api'] === 'ipinfo') {
     header('Content-Type: application/json; charset=utf-8');
     $started = microtime(true);
@@ -364,31 +441,14 @@ if (isset($_GET['api']) && $_GET['api'] === 'ipinfo') {
     // name gives us the right answer.
     $outgoing_ip = phproxy_outgoing_ip();
 
-    // Collect all IPs needing ASN/country/AS-name into one batch.
-    $lookup_ips = [];
-    if ($custom_ip !== '') $lookup_ips[] = $custom_ip;
-    foreach ([$client_ip, $server_ip, $outgoing_ip] as $ip) {
-        if ($ip !== '' && filter_var($ip, FILTER_VALIDATE_IP)) $lookup_ips[] = $ip;
-    }
-    foreach ($xff_chain as $ip) $lookup_ips[] = $ip;
-    $lookup_ips = array_values(array_unique($lookup_ips));
-    $cymru = phproxy_cymru_whois($lookup_ips, 2.0);
-
-    $shape = function (string $ip) use ($cymru): array {
+    $shape = function (string $ip): array {
         if ($ip === '') return ['ip' => ''];
-        $info = $cymru[$ip] ?? [];
         $is_priv = !filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE);
         return [
             'ip'         => $ip,
             'family'     => str_contains($ip, ':') ? 'IPv6' : 'IPv4',
             'is_private' => (bool) $is_priv,
             'reverse'    => $is_priv ? '' : (@gethostbyaddr($ip) ?: ''),
-            'asn'        => $info['asn']       ?? null,
-            'asn_name'   => $info['asn_name']  ?? '',
-            'country'    => $info['country']   ?? '',
-            'prefix'     => $info['prefix']    ?? '',
-            'registry'   => $info['registry']  ?? '',
-            'allocated'  => $info['allocated'] ?? '',
         ];
     };
 
@@ -429,12 +489,6 @@ if (isset($_GET['api']) && $_GET['api'] === 'ipinfo') {
             'server_software' => $_SERVER['SERVER_SOFTWARE'] ?? '',
             'server_port'     => $_SERVER['SERVER_PORT']     ?? '',
         ],
-        'sources' => [
-            'asn'      => 'whois.cymru.com:43 (TCP, RFC 3912)',
-            'reverse'  => 'gethostbyaddr() — system resolver',
-            'outgoing' => 'UDP connect trick — no packets sent',
-            'city'     => 'unavailable — requires a GeoIP database',
-        ],
         'duration_ms' => (int) ((microtime(true) - $started) * 1000),
     ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
     exit;
@@ -460,60 +514,6 @@ function phproxy_outgoing_ip(): string
     if (preg_match('/^\[([^\]]+)\]:\d+$/', $name, $m)) return $m[1];
     if (preg_match('/^([0-9.]+):\d+$/', $name, $m))    return $m[1];
     return $name;
-}
-
-/**
- * Batch IP→ASN lookup against Team Cymru's public WHOIS service. One TCP
- * round-trip for any number of IPs. Pure stream_socket_client; no library.
- * Returns: [ip => ['asn'=>int|null,'prefix','country','registry','allocated','asn_name']]
- */
-function phproxy_cymru_whois(array $ips, float $timeout = 2.0): array
-{
-    $ips = array_values(array_filter($ips, fn($ip) => filter_var($ip, FILTER_VALIDATE_IP)));
-    if (empty($ips)) return [];
-    // Skip private/loopback — Cymru won't have ASNs for them.
-    $public = [];
-    foreach ($ips as $ip) {
-        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
-            $public[] = $ip;
-        }
-    }
-    if (empty($public)) return [];
-
-    $sock = @stream_socket_client('tcp://whois.cymru.com:43', $en, $es, $timeout);
-    if ($sock === false) return [];
-    stream_set_timeout($sock, (int) $timeout, (int) (($timeout - (int) $timeout) * 1_000_000));
-    $query = "begin\nverbose\n" . implode("\n", $public) . "\nend\n";
-    @fwrite($sock, $query);
-    $response = '';
-    while (!feof($sock)) {
-        $chunk = @fgets($sock, 4096);
-        if ($chunk === false) break;
-        $response .= $chunk;
-        $st = stream_get_meta_data($sock);
-        if (!empty($st['timed_out'])) break;
-    }
-    @fclose($sock);
-
-    // Pipe-delimited verbose output. Header line starts with "AS".
-    // Example: "13335   | 1.1.1.1   | 1.1.1.0/24 | US | arin | 2010-07-14 | CLOUDFLARENET, US"
-    $out = [];
-    foreach (explode("\n", $response) as $line) {
-        $line = trim($line);
-        if ($line === '' || stripos($line, 'Bulk mode;') === 0 || stripos($line, 'AS ') === 0) continue;
-        $parts = array_map('trim', explode('|', $line));
-        if (count($parts) < 7) continue;
-        $ip = $parts[1];
-        $out[$ip] = [
-            'asn'       => ctype_digit($parts[0]) ? (int) $parts[0] : null,
-            'prefix'    => $parts[2],
-            'country'   => $parts[3],
-            'registry'  => $parts[4],
-            'allocated' => $parts[5],
-            'asn_name'  => $parts[6],
-        ];
-    }
-    return $out;
 }
 
 if (isset($_GET['api']) && $_GET['api'] === 'fetch') {
@@ -3101,12 +3101,8 @@ CSS;
             .     "if(!d||!d.ip)return '<div class=\"ipinfo-card\"><div class=\"ipinfo-card-title\">'+role+'</div><div class=\"ipinfo-row\"><span class=\"k\">(not available)</span></div></div>';"
             .     "var fam=d.family?'<span class=\"ipinfo-family\">'+d.family+'</span>':'';"
             .     "var priv=d.is_private?'<span class=\"ipinfo-private\">private</span>':'';"
-            .     "var r='';function row(k,v){return v?'<div class=\"ipinfo-row\"><span class=\"k\">'+k+'</span><span class=\"v\">'+v+'</span></div>':'';}"
-            .     "r+=row('Reverse',d.reverse||'');"
-            .     "if(d.asn)r+='<div class=\"ipinfo-row ipinfo-asn\"><span class=\"k\">ASN</span><span class=\"v\"><span class=\"ipinfo-asn-num\">AS'+d.asn+'</span> '+(d.asn_name||'')+'</span></div>';"
-            .     "r+=row('Country',d.country?'<span class=\"ipinfo-flag\">'+d.country+'</span>':'');"
-            .     "r+=row('Prefix',d.prefix||'');r+=row('Registry',d.registry||'');"
-            .     "return '<div class=\"ipinfo-card\"><div class=\"ipinfo-card-title\">'+role+(priv?'  '+priv:'')+'</div><div class=\"ipinfo-ip\">'+(d.ip||'—')+fam+'</div>'+r+'</div>';"
+            .     "var r=d.reverse?'<div class=\"ipinfo-row\"><span class=\"k\">Reverse</span><span class=\"v\">'+escH(d.reverse)+'</span></div>':'';"
+            .     "return '<div class=\"ipinfo-card\"><div class=\"ipinfo-card-title\">'+role+(priv?'  '+priv:'')+'</div><div class=\"ipinfo-ip\">'+escH(d.ip)+fam+'</div>'+r+'</div>';"
             .   "}"
             .   "function ipKv(title,o){if(!o)return '';var r='';Object.keys(o).forEach(function(k){var v=o[k];if(v==null)return;var lb=k.replace(/_/g,' ');r+='<div class=\"k\">'+lb+'</div><div class=\"v'+(v===''?' empty':'')+'\">'+(v===''?'—':escH(v))+'</div>';});return r?('<div class=\"ipinfo-section\"><h4>'+title+'</h4><div class=\"ipinfo-grid\">'+r+'</div></div>'):'';}"
             .   "var ipT=document.querySelector('[data-ipinfo-target]');"
@@ -3114,8 +3110,8 @@ CSS;
             .     "try{var r=await fetch(nbase+'?api=ipinfo');var j=await r.json();"
             .       "if(j.ok===false){ipT.innerHTML='<div class=\"ipinfo-loading\">Failed: '+escH(j.error||'unknown')+'</div>';return;}"
             .       "ipT.innerHTML=ipCard('Client',j.client)+ipCard('Server',j.server)+ipCard('Outgoing',j.outgoing);"
-            .       "var ex='';if(j.forwarded&&j.forwarded.length){var hops=j.forwarded.map(function(h){return h.ip+(h.asn?' (AS'+h.asn+' '+h.country+')':'');}).join(' → ');ex+='<div class=\"ipinfo-section\"><h4>X-Forwarded-For chain</h4><div class=\"ipinfo-grid\"><div class=\"k\">hops</div><div class=\"v\">'+escH(hops)+'</div></div></div>';}"
-            .       "ex+=ipKv('Request',j.request);ex+=ipKv('Host',j.host);ex+=ipKv('Sources',j.sources);"
+            .       "var ex='';if(j.forwarded&&j.forwarded.length){var hops=j.forwarded.map(function(h){return h.ip;}).join(' → ');ex+='<div class=\"ipinfo-section\"><h4>X-Forwarded-For chain</h4><div class=\"ipinfo-grid\"><div class=\"k\">hops</div><div class=\"v\">'+escH(hops)+'</div></div></div>';}"
+            .       "ex+=ipKv('Request',j.request);ex+=ipKv('Host',j.host);"
             .       "ipT.insertAdjacentHTML('afterend',ex);"
             .     "}catch(e){ipT.innerHTML='<div class=\"ipinfo-loading\">Network error: '+escH(e&&e.message?e.message:e)+'</div>';}"
             .   "})();}"
@@ -3125,9 +3121,7 @@ CSS;
             .       "try{var r=await fetch(nbase+'?api=ipinfo&ip='+encodeURIComponent(ip));var j=await r.json();"
             .         "if(j.ok===false){o.className='netcheck-result err';o.textContent='ERROR  '+(j.error||'request failed');return;}"
             .         "var L=j.lookup||{},lines=[L.ip+'   '+L.family+(L.is_private?'   (private)':'')];"
-            .         "if(L.reverse)lines.push('reverse:    '+L.reverse);if(L.asn)lines.push('ASN:        AS'+L.asn+'  '+L.asn_name);"
-            .         "if(L.country)lines.push('country:    '+L.country);if(L.prefix)lines.push('prefix:     '+L.prefix);"
-            .         "if(L.registry)lines.push('registry:   '+L.registry);if(L.allocated)lines.push('allocated:  '+L.allocated);"
+            .         "if(L.reverse)lines.push('reverse:    '+L.reverse);"
             .         "lines.push('','lookup time: '+(j.duration_ms||0)+' ms');"
             .         "o.className='netcheck-result ok';o.textContent=lines.join('\\n');"
             .       "}catch(e){o.className='netcheck-result err';o.textContent='Network error: '+(e&&e.message?e.message:e);}finally{b.disabled=false;}"
@@ -3153,9 +3147,12 @@ CSS;
             .           "j.records.forEach(function(r){var k=r.type||j.type,v=r.ip||r.ipv6||r.target||r.txt||r.value||r.mname||(r.tag?r.tag+' \"'+r.value+'\"':JSON.stringify(r));L.push(k+'  '+v+(r.ttl!=null?'   ttl '+r.ttl:''));});"
             .           "out.className='netcheck-result ok';out.textContent=L.join('\\n');"
             .         "} else if(kind==='cert'){"
-            .           "var x=j.leaf||{},d=x.days_left,st=d<0?'EXPIRED '+Math.abs(d)+'d ago':(d<30?'expires in '+d+'d (warning)':'expires in '+d+'d');"
-            .           "var L=[j.host+':'+j.port+'   ('+(j.duration_ms||0)+' ms)','','subject:    '+(x.subject_cn||'(none)'),'issuer:     '+(x.issuer_cn||'(none)'),'valid:      '+(x.valid_from||'?')+'  →  '+(x.valid_to||'?'),'status:     '+st,'sig algo:   '+(x.sig_algorithm||'?')];"
-            .           "if(x.san&&x.san.length)L.push('SAN:        '+x.san.slice(0,12).join(', '));"
+            .           "var x=j.leaf||{},N=j.negotiated||{},d=x.days_left,st=d<0?'EXPIRED '+Math.abs(d)+'d ago':(d<30?'expires in '+d+'d (warning)':'expires in '+d+'d');"
+            .           "var kd=x.key_type?(x.key_type+' '+x.key_bits+(x.key_curve?' ('+x.key_curve+')':'')):'?';"
+            .           "var L=[j.host+':'+j.port+'   ('+(j.duration_ms||0)+' ms)','','negotiated:  '+(N.protocol||'?')+'   '+(N.cipher_name||'?')+(N.cipher_bits?'  ('+N.cipher_bits+'-bit)':''),''];"
+            .           "if(j.tls_versions&&j.tls_versions.length){L.push('TLS versions:');j.tls_versions.forEach(function(v){var lbl=(v.version+'   ').slice(0,9);if(v.supported)L.push('  '+lbl+' ✓   '+(v.cipher_name||'')+(v.cipher_bits?'  ('+v.cipher_bits+'-bit)':''));else L.push('  '+lbl+' ✗   '+(v.error||'unsupported'));});L.push('');}"
+            .           "L.push('subject:     '+(x.subject_cn||'(none)'));L.push('issuer:      '+(x.issuer_cn||'(none)'));L.push('valid:       '+(x.valid_from||'?')+'  →  '+(x.valid_to||'?'));L.push('status:      '+st);L.push('sig algo:    '+(x.sig_algorithm||'?'));L.push('public key:  '+kd);"
+            .           "if(x.san&&x.san.length)L.push('SAN:         '+x.san.slice(0,12).join(', '));"
             .           "if(j.chain_length){L.push('','chain ('+j.chain_length+'):');(j.chain||[]).forEach(function(c,i){L.push('  '+i+'. '+(c.subject_cn||'?')+'   ←  '+(c.issuer_cn||'?'));});}"
             .           "out.className='netcheck-result '+(d!=null&&d<0?'err':(d!=null&&d<30?'warn':'ok'));out.textContent=L.join('\\n');"
             .         "}"
@@ -3448,21 +3445,40 @@ phproxy_render_panel_tabs(
     }
     function fmtCert(j) {
         var L = j.leaf || {};
+        var N = j.negotiated || {};
         var days = L.days_left;
         var status = days < 0 ? 'EXPIRED ' + Math.abs(days) + 'd ago'
                    : days < 30 ? 'expires in ' + days + 'd (warning)'
                    : 'expires in ' + days + 'd';
+        var keyDesc = L.key_type
+            ? L.key_type + ' ' + L.key_bits + (L.key_curve ? ' (' + L.key_curve + ')' : '')
+            : '?';
         var lines = [
             j.host + ':' + j.port + '   (' + (j.duration_ms || 0) + ' ms)',
             '',
-            'subject:    ' + (L.subject_cn || '(none)') + (L.subject_org ? '  /  ' + L.subject_org : ''),
-            'issuer:     ' + (L.issuer_cn || '(none)')  + (L.issuer_org  ? '  /  ' + L.issuer_org  : ''),
-            'valid:      ' + (L.valid_from || '?') + '  →  ' + (L.valid_to || '?'),
-            'status:     ' + status,
-            'sig algo:   ' + (L.sig_algorithm || '?'),
+            'negotiated:  ' + (N.protocol || '?') + '   ' + (N.cipher_name || '?') + (N.cipher_bits ? '  (' + N.cipher_bits + '-bit)' : ''),
+            '',
         ];
+        if (j.tls_versions && j.tls_versions.length) {
+            lines.push('TLS versions:');
+            j.tls_versions.forEach(function (v) {
+                if (v.supported) {
+                    lines.push('  ' + (v.version + '   ').slice(0, 9) + ' ✓   ' + (v.cipher_name || '') +
+                               (v.cipher_bits ? '  (' + v.cipher_bits + '-bit)' : ''));
+                } else {
+                    lines.push('  ' + (v.version + '   ').slice(0, 9) + ' ✗   ' + (v.error || 'unsupported'));
+                }
+            });
+            lines.push('');
+        }
+        lines.push('subject:     ' + (L.subject_cn || '(none)') + (L.subject_org ? '  /  ' + L.subject_org : ''));
+        lines.push('issuer:      ' + (L.issuer_cn || '(none)')  + (L.issuer_org  ? '  /  ' + L.issuer_org  : ''));
+        lines.push('valid:       ' + (L.valid_from || '?') + '  →  ' + (L.valid_to || '?'));
+        lines.push('status:      ' + status);
+        lines.push('sig algo:    ' + (L.sig_algorithm || '?'));
+        lines.push('public key:  ' + keyDesc);
         if (L.san && L.san.length) {
-            lines.push('SAN:        ' + L.san.slice(0, 12).join(', ') + (L.san.length > 12 ? ' …(+' + (L.san.length - 12) + ')' : ''));
+            lines.push('SAN:         ' + L.san.slice(0, 12).join(', ') + (L.san.length > 12 ? ' …(+' + (L.san.length - 12) + ')' : ''));
         }
         if (j.chain_length) {
             lines.push('');
@@ -3596,24 +3612,13 @@ phproxy_render_panel_tabs(
             return '<div class="ipinfo-card"><div class="ipinfo-card-title">' + role + '</div>' +
                    '<div class="ipinfo-row"><span class="k">(not available)</span></div></div>';
         }
-        var fam = data.family ? '<span class="ipinfo-family">' + data.family + '</span>' : '';
+        var fam  = data.family ? '<span class="ipinfo-family">' + data.family + '</span>' : '';
         var priv = data.is_private ? '<span class="ipinfo-private">private</span>' : '';
-        var rows = '';
-        function row(k, v) {
-            if (!v) return '';
-            return '<div class="ipinfo-row"><span class="k">' + k + '</span><span class="v">' + v + '</span></div>';
-        }
-        rows += row('Reverse', data.reverse || '');
-        if (data.asn) {
-            rows += '<div class="ipinfo-row ipinfo-asn"><span class="k">ASN</span><span class="v"><span class="ipinfo-asn-num">AS' + data.asn + '</span> ' + (data.asn_name || '') + '</span></div>';
-        }
-        rows += row('Country', data.country ? '<span class="ipinfo-flag">' + data.country + '</span>' : '');
-        rows += row('Prefix', data.prefix || '');
-        rows += row('Registry', data.registry || '');
+        var rev  = data.reverse ? '<div class="ipinfo-row"><span class="k">Reverse</span><span class="v">' + escHtml(data.reverse) + '</span></div>' : '';
         return '<div class="ipinfo-card">' +
                  '<div class="ipinfo-card-title">' + role + (priv ? '  ' + priv : '') + '</div>' +
-                 '<div class="ipinfo-ip">' + (data.ip || '—') + fam + '</div>' +
-                 rows +
+                 '<div class="ipinfo-ip">' + escHtml(data.ip) + fam + '</div>' +
+                 rev +
                '</div>';
     }
     function renderIpinfoKv(title, obj) {
@@ -3649,12 +3654,11 @@ phproxy_render_panel_tabs(
             target.innerHTML = html;
             var extra = '';
             if (j.forwarded && j.forwarded.length) {
-                var hops = j.forwarded.map(function (h) { return h.ip + (h.asn ? ' (AS' + h.asn + ' ' + h.country + ')' : ''); }).join(' → ');
+                var hops = j.forwarded.map(function (h) { return h.ip; }).join(' → ');
                 extra += '<div class="ipinfo-section"><h4>X-Forwarded-For chain</h4><div class="ipinfo-grid"><div class="k">hops</div><div class="v">' + escHtml(hops) + '</div></div></div>';
             }
             extra += renderIpinfoKv('Request', j.request);
             extra += renderIpinfoKv('Host',    j.host);
-            extra += renderIpinfoKv('Sources', j.sources);
             target.insertAdjacentHTML('afterend', extra);
         } catch (e) {
             target.innerHTML = '<div class="ipinfo-loading">Network error: ' + escHtml(e && e.message ? e.message : e) + '</div>';
@@ -3685,12 +3689,7 @@ phproxy_render_panel_tabs(
                 }
                 var L = j.lookup || {};
                 var lines = [L.ip + '   ' + L.family + (L.is_private ? '   (private)' : '')];
-                if (L.reverse)   lines.push('reverse:    ' + L.reverse);
-                if (L.asn)       lines.push('ASN:        AS' + L.asn + '  ' + L.asn_name);
-                if (L.country)   lines.push('country:    ' + L.country);
-                if (L.prefix)    lines.push('prefix:     ' + L.prefix);
-                if (L.registry)  lines.push('registry:   ' + L.registry);
-                if (L.allocated) lines.push('allocated:  ' + L.allocated);
+                if (L.reverse) lines.push('reverse:    ' + L.reverse);
                 lines.push('');
                 lines.push('lookup time: ' + (j.duration_ms || 0) + ' ms');
                 out.className = 'netcheck-result ok';
@@ -4024,7 +4023,7 @@ foreach ($_v_cookies as $_wire => $_c):
     </section>
 
     <section class="tab-panel" data-tab="ip">
-        <p class="tab-help">Network identity for the current request. <strong>Client</strong> is who you appear as to this server; <strong>Outgoing</strong> is what the wider internet sees when the server reaches out. ASN / country / AS name / BGP prefix come from Team Cymru's public WHOIS service over TCP/43. City data isn't shown — it requires a GeoIP database which we don't ship.</p>
+        <p class="tab-help">Network identity for the current request. <strong>Client</strong> is who you appear as to this server; <strong>Outgoing</strong> is what the wider internet sees when the server reaches out. All data is collected locally via PHP built-ins — no external lookups, no API keys.</p>
         <div class="ipinfo-wrap" data-ipinfo-target>
             <div class="ipinfo-loading">Looking up IPs…</div>
         </div>
@@ -4075,7 +4074,7 @@ foreach ($_v_cookies as $_wire => $_c):
     </section>
 
     <section class="tab-panel" data-tab="cert">
-        <p class="tab-help">Open an SSL/TLS handshake and inspect the leaf certificate plus the full chain — CN, issuer, SAN, signature algorithm, expiry countdown.</p>
+        <p class="tab-help">Open an SSL/TLS handshake and inspect everything available: TLS versions the server accepts, cipher negotiated per version, public-key type / size, full certificate chain, expiry countdown.</p>
         <form class="netcheck netcheck-solo" data-netcheck="cert" autocomplete="off">
             <div class="netcheck-fields">
                 <input type="text" name="host" placeholder="example.com" required spellcheck="false" autocapitalize="off"/>
@@ -4688,9 +4687,9 @@ function phproxy_cli_checks_curl(string $base): string
     $u_port_stream = $base . '?api=portcheck&host=example.com&port=22-30&stream=1';
     $u_ip_self     = $base . '?api=ipinfo';
     $u_ip_lookup   = $base . '?api=ipinfo&ip=1.1.1.1';
-    return "# IP info — client + server + outgoing IP (ASN, country, AS-name, reverse DNS)\n"
+    return "# IP info — client + server + outgoing IP + reverse DNS + request headers\n"
          . 'curl ' . phproxy_snip_shell($u_ip_self) . "\n\n"
-         . "# IP info — look up any IP (IPv4 or IPv6)\n"
+         . "# IP info — reverse DNS for any IP (IPv4 or IPv6)\n"
          . 'curl ' . phproxy_snip_shell($u_ip_lookup) . "\n\n"
          . "# Port check — single port\n"
          . 'curl ' . phproxy_snip_shell($u_port_one) . "\n\n"
@@ -4710,10 +4709,10 @@ function phproxy_cli_checks_php(string $base): string
 {
     $out  = "<?php\n";
     $out .= '$base = ' . phproxy_snip_php($base) . ";\n\n";
-    $out .= "// IP info — me, the server, my outgoing IP, ASN, country\n";
+    $out .= "// IP info — me, the server, the server's outgoing IP + reverse DNS\n";
     $out .= "\$ipinfo = json_decode(file_get_contents(\$base . '?api=ipinfo'), true);\n";
-    $out .= "printf(\"client:   %s   AS%s %s\\n\", \$ipinfo['client']['ip'], \$ipinfo['client']['asn'] ?? '?', \$ipinfo['client']['country'] ?? '');\n";
-    $out .= "printf(\"outgoing: %s   AS%s %s\\n\", \$ipinfo['outgoing']['ip'], \$ipinfo['outgoing']['asn'] ?? '?', \$ipinfo['outgoing']['country'] ?? '');\n\n";
+    $out .= "printf(\"client:   %s   %s\\n\",   \$ipinfo['client']['ip'],   \$ipinfo['client']['reverse']   ?? '');\n";
+    $out .= "printf(\"outgoing: %s   %s\\n\", \$ipinfo['outgoing']['ip'], \$ipinfo['outgoing']['reverse'] ?? '');\n\n";
     $out .= "// Port check — accepts: 443  |  80-443  |  22,80,443,8000-8010  (max 128)\n";
     $out .= "\$port = json_decode(file_get_contents(\$base . '?api=portcheck&host=example.com&port=80-443'), true);\n";
     $out .= "foreach (\$port['results'] as \$r) {\n";
@@ -4732,10 +4731,10 @@ function phproxy_cli_checks_python(string $base): string
 {
     $out  = "import requests\n\n";
     $out .= 'base = ' . phproxy_snip_php($base) . "\n\n";
-    $out .= "# IP info — me, the server, my outgoing IP, ASN, country\n";
+    $out .= "# IP info — me, the server, the server's outgoing IP + reverse DNS\n";
     $out .= "ip = requests.get(base, params={'api': 'ipinfo'}).json()\n";
-    $out .= "print(f\"client:   {ip['client']['ip']}   AS{ip['client'].get('asn','?')} {ip['client'].get('country','')}\")\n";
-    $out .= "print(f\"outgoing: {ip['outgoing']['ip']}   AS{ip['outgoing'].get('asn','?')} {ip['outgoing'].get('country','')}\")\n\n";
+    $out .= "print(f\"client:   {ip['client']['ip']}   {ip['client'].get('reverse','')}\")\n";
+    $out .= "print(f\"outgoing: {ip['outgoing']['ip']}   {ip['outgoing'].get('reverse','')}\")\n\n";
     $out .= "# Port check — accepts: 443  |  80-443  |  22,80,443,8000-8010  (max 128)\n";
     $out .= "scan = requests.get(base, params={'api': 'portcheck', 'host': 'example.com', 'port': '80-443'}).json()\n";
     $out .= "for r in scan['results']:\n";
@@ -4751,10 +4750,10 @@ function phproxy_cli_checks_js(string $base): string
 {
     $b = phproxy_snip_php($base);
     return "const base = $b;\n\n"
-         . "// IP info — me, the server, my outgoing IP, ASN, country\n"
+         . "// IP info — me, the server, the server's outgoing IP + reverse DNS\n"
          . "const ip = await fetch(base + '?api=ipinfo').then(r => r.json());\n"
-         . "console.log(`client:   \${ip.client.ip}   AS\${ip.client.asn ?? '?'} \${ip.client.country ?? ''}`);\n"
-         . "console.log(`outgoing: \${ip.outgoing.ip}   AS\${ip.outgoing.asn ?? '?'} \${ip.outgoing.country ?? ''}`);\n\n"
+         . "console.log(`client:   \${ip.client.ip}   \${ip.client.reverse ?? ''}`);\n"
+         . "console.log(`outgoing: \${ip.outgoing.ip}   \${ip.outgoing.reverse ?? ''}`);\n\n"
          . "// Port check — accepts: 443  |  80-443  |  22,80,443,8000-8010  (max 128)\n"
          . "const scan = await fetch(base + '?api=portcheck&host=example.com&port=80-443').then(r => r.json());\n"
          . "for (const r of scan.results) {\n"
@@ -4788,7 +4787,7 @@ function phproxy_cli_checks_go(string $base): string
     $out .= "}\n\n";
     $out .= "func main() {\n";
     $out .= '    base := ' . $b . "\n\n";
-    $out .= "    // IP info — me, the server, my outgoing IP, ASN, country\n";
+    $out .= "    // IP info — me, the server, the server's outgoing IP + reverse DNS\n";
     $out .= "    fmt.Println(get(base + \"?api=ipinfo\"))\n\n";
     $out .= "    // Port check — accepts: 443  |  80-443  |  22,80,443,8000-8010  (max 128)\n";
     $out .= "    scan := get(base + \"?api=portcheck&host=example.com&port=80-443\")\n";
