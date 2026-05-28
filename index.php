@@ -739,7 +739,7 @@ $_proxify           =
                         'application/xhtml+xml' => 1,
                         'text/css'              => 1,
                     ];
-$_version           = 'v1.3.1';
+$_version           = 'v1.3.2';
 $_http_host         = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : (isset($_SERVER['SERVER_NAME']) ? $_SERVER['SERVER_NAME'] : 'localhost');
 // https://stackoverflow.com/questions/4504831/serverhttp-host-contains-port-number-too
 $pos = strpos($_http_host, ':');
@@ -3060,8 +3060,13 @@ CSS;
         $_home_icon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v10h14V10"/></svg>';
 
         // Build the inline tabs panel via the shared template function.
-        // Proxied pages don't need the IP/Port/DNS/SSL tabs — those are
-        // host-level utilities, not per-page. Hide them here.
+        // Proxied pages hide IP/Port/DNS — those are host-level utilities.
+        // SSL stays visible (and pre-fills with the current page's host)
+        // only when the page is HTTPS, since that's the only time it's
+        // meaningful for the current context.
+        $_is_https      = !empty($_url_parts['scheme']) && strtolower($_url_parts['scheme']) === 'https';
+        $_cert_host_now = $_is_https ? (string) ($_url_parts['host'] ?? '') : '';
+        $_cert_port_now = $_is_https ? (int)    ($_url_parts['port'] ?? 443) : 0;
         ob_start();
         phproxy_render_panel_tabs(
             return_to:           $_current_proxy_url,
@@ -3080,7 +3085,11 @@ CSS;
             show_network:        true,
             network_entries:     $_SESSION['phproxy_network'] ?? [],
             network_current_url: $_url,
-            show_netchecks:      false
+            show_netchecks:      false,
+            show_cert:           $_is_https,
+            cert_host:           $_cert_host_now,
+            cert_port:           $_cert_port_now,
+            cert_autorun:        $_is_https
         );
         $_panel_inner_html = ob_get_clean();
 
@@ -3211,6 +3220,20 @@ CSS;
             .       "}catch(e){out.className='netcheck-result err';out.textContent='Network error: '+(e&&e.message?e.message:e);}finally{btn.disabled=false;}"
             .     "});"
             .   "});"
+            .   /* SSL tab — auto-run the cert check on first activation
+               when the form is pre-filled with the current page's host. */
+              "(function(){"
+            .     "var tab=document.getElementById('tab-cert');"
+            .     "var f=document.querySelector('form[data-netcheck=\"cert\"][data-autorun=\"1\"]');"
+            .     "if(!tab||!f)return;"
+            .     "function trigger(){"
+            .       "if(f.dataset.ran)return;f.dataset.ran='1';"
+            .       "if(f.requestSubmit)f.requestSubmit();"
+            .       "else f.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));"
+            .     "}"
+            .     "if(tab.checked)trigger();"
+            .     "tab.addEventListener('change',function(){if(tab.checked)trigger();});"
+            .   "})();"
             . "})();</script>";
 
         $_response_body = preg_replace('#\<\s*body(.*?)\>#si', "$0\n$_url_form" , $_response_body, 1);
@@ -3737,7 +3760,11 @@ function phproxy_render_panel_tabs(
     bool $show_network = false,
     array $network_entries = [],
     string $network_current_url = '',
-    bool $show_netchecks = true   // IP / Port / DNS / SSL — entry page only
+    bool $show_netchecks = true,  // IP / Port / DNS — entry page only
+    bool $show_cert = true,       // SSL tab — shown on entry + HTTPS proxied pages
+    string $cert_host = '',       // Pre-fill the SSL form for the current page
+    int $cert_port = 0,
+    bool $cert_autorun = false    // Auto-run the cert check when the SSL tab opens
 ): void {
     // Local aliases keep the existing template body unchanged
     $_panel_return_to      = $return_to;
@@ -3757,6 +3784,10 @@ function phproxy_render_panel_tabs(
     $_panel_network        = $network_entries;
     $_panel_net_current    = $network_current_url;
     $_panel_show_netchecks = $show_netchecks;
+    $_panel_show_cert      = $show_cert;
+    $_panel_cert_host      = $cert_host;
+    $_panel_cert_port      = $cert_port > 0 ? $cert_port : 443;
+    $_panel_cert_autorun   = $cert_autorun;
 
 $_panel_return_html = $_panel_return_to !== ''
     ? '<input type="hidden" name="return_to" value="' . htmlspecialchars($_panel_return_to, ENT_QUOTES) . '"/>'
@@ -3781,6 +3812,8 @@ $_ua_presets_local = $GLOBALS['_ua_presets'] ?? [];
     <input type="radio" name="tab" id="tab-ip"<?php echo $_panel_active_tab === 'ip' ? ' checked' : ''; ?>/>
     <input type="radio" name="tab" id="tab-port"<?php echo $_panel_active_tab === 'port' ? ' checked' : ''; ?>/>
     <input type="radio" name="tab" id="tab-dns"<?php echo $_panel_active_tab === 'dns' ? ' checked' : ''; ?>/>
+    <?php endif; ?>
+    <?php if ($_panel_show_cert): ?>
     <input type="radio" name="tab" id="tab-cert"<?php echo $_panel_active_tab === 'cert' ? ' checked' : ''; ?>/>
     <?php endif; ?>
     <?php if ($_panel_show_response): ?>
@@ -3799,6 +3832,8 @@ $_ua_presets_local = $GLOBALS['_ua_presets'] ?? [];
         <label for="tab-ip">IP</label>
         <label for="tab-port">Port</label>
         <label for="tab-dns">DNS</label>
+        <?php endif; ?>
+        <?php if ($_panel_show_cert): ?>
         <label for="tab-cert">SSL</label>
         <?php endif; ?>
         <?php if ($_panel_show_response): ?>
@@ -4089,13 +4124,15 @@ foreach ($_v_cookies as $_wire => $_c):
             <pre class="netcheck-result" hidden></pre>
         </form>
     </section>
+    <?php endif; ?>
 
+    <?php if ($_panel_show_cert): ?>
     <section class="tab-panel" data-tab="cert">
         <p class="tab-help">Open an SSL/TLS handshake and inspect everything available: TLS versions the server accepts, the cipher negotiated per version, full certificate chain with every parsed extension, fingerprints, and the raw PEM blocks. All data comes from PHP's OpenSSL functions — no <code>openssl s_client</code> shell-out, no library.</p>
-        <form class="netcheck netcheck-solo" data-netcheck="cert" autocomplete="off">
+        <form class="netcheck netcheck-solo" data-netcheck="cert"<?php echo $_panel_cert_autorun ? ' data-autorun="1"' : ''; ?> autocomplete="off">
             <div class="netcheck-fields">
-                <input type="text" name="host" placeholder="example.com" required spellcheck="false" autocapitalize="off"/>
-                <input type="number" name="port" placeholder="443" min="1" max="65535" value="443" required/>
+                <input type="text" name="host" placeholder="example.com" value="<?php echo htmlspecialchars($_panel_cert_host); ?>" required spellcheck="false" autocapitalize="off"/>
+                <input type="number" name="port" placeholder="443" min="1" max="65535" value="<?php echo (int) $_panel_cert_port; ?>" required/>
             </div>
             <button class="button-submit" type="submit">Inspect cert</button>
             <div class="netcheck-result cert-result" hidden></div>
