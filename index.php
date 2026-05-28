@@ -1007,6 +1007,33 @@ if (isset($_GET['action']) && $_SERVER['REQUEST_METHOD'] === 'POST')
     exit(0);
 }
 
+// Start a session for the Network tab log. Done after the early-exit
+// dispatchers so asset/api/action requests don't pay the session cost.
+if (session_status() === PHP_SESSION_NONE) {
+    @session_start([
+        'cookie_lifetime' => 0,
+        'cookie_samesite' => 'Lax',
+        'cookie_httponly' => false,
+    ]);
+}
+if (!isset($_SESSION['phproxy_network']) || !is_array($_SESSION['phproxy_network'])) {
+    $_SESSION['phproxy_network'] = [];
+}
+
+// Clear-network action handler (lives outside the main dispatcher so it can
+// touch $_SESSION, which only just opened).
+if (isset($_GET['action']) && $_GET['action'] === 'clear-network' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $_SESSION['phproxy_network'] = [];
+    $_rt = isset($_POST['return_to']) ? (string) $_POST['return_to'] : '';
+    if ($_rt !== '' && strpos($_rt, $_script_base) === 0) {
+        setcookie('phproxy-panel-tab', 'network', time() + 60, '/');
+        header('Location: ' . $_rt);
+    } else {
+        header('Location: ' . $_script_url);
+    }
+    exit(0);
+}
+
 //
 // Legacy /edit.php compatibility — accepts the old userAgent POST shape
 // from any caller that still wires forms to action=submit&userAgent=…
@@ -1601,6 +1628,10 @@ do
    }
 
    $_retry  = false;
+   // Timing for the Network tab — captured per retry attempt; the LAST values
+   // are the ones that end up in the session log.
+   $_net_start = microtime(true);
+   $_net_ttfb  = null;
    $_socket = @stream_socket_client(($_url_parts['scheme'] === 'https' && $_system['ssl'] ? 'ssl://' : 'tcp://') . $_url_parts['host']. ":". $_url_parts['port'], $err_no, $err_str, 30,STREAM_CLIENT_CONNECT, $context);
 
     if ($_socket === false)
@@ -1792,6 +1823,7 @@ do
     $_response_headers = $_response_keys = [];
 
     $line = fgets($_socket, 8192);
+    if ($_net_ttfb === null) $_net_ttfb = microtime(true);
 
     while (strspn($line, "\r\n") !== strlen($line))
     {
@@ -1944,14 +1976,17 @@ if (!isset($_proxify[$_content_type]))
         }
     }
 
+    $_stream_size = 0;
     do
     {
         $data = fread($_socket, 8192);
         echo $data;
+        $_stream_size += strlen((string) $data);
     }
     while (isset($data[0]));
 
     fclose($_socket);
+    phproxy_net_log($_url, $_request_method, (int) $_response_code, $_content_type, $_stream_size, $_net_start, $_net_ttfb, microtime(true));
     exit(0);
 }
 
@@ -1964,6 +1999,8 @@ while (isset($data[0]));
 
 unset($data);
 fclose($_socket);
+
+phproxy_net_log($_url, $_request_method, (int) $_response_code, $_content_type, strlen($_response_body), $_net_start, $_net_ttfb, microtime(true));
 
 //
 // MODIFY AND DUMP RESOURCE
@@ -2501,18 +2538,21 @@ CSS;
         // Build the inline tabs panel via the shared template function
         ob_start();
         phproxy_render_panel_tabs(
-            return_to:      $_current_proxy_url,
-            show_response:  true,
-            response_pairs: $_panel_response_pairs,
-            request_pairs:  $_panel_request_pairs,
-            request_line:   $_panel_request_line,
-            active_tab:     $_panel_active_tab,
-            form_id:        '',
-            show_cli:       true,
-            cli_url:        $_url,
-            cli_method:     $_request_method,
-            cli_headers:    $_panel_request_pairs,
-            cli_body:       (string) ($_post_body ?? '')
+            return_to:           $_current_proxy_url,
+            show_response:       true,
+            response_pairs:      $_panel_response_pairs,
+            request_pairs:       $_panel_request_pairs,
+            request_line:        $_panel_request_line,
+            active_tab:          $_panel_active_tab,
+            form_id:             '',
+            show_cli:            true,
+            cli_url:             $_url,
+            cli_method:          $_request_method,
+            cli_headers:         $_panel_request_pairs,
+            cli_body:            (string) ($_post_body ?? ''),
+            show_network:        true,
+            network_entries:     $_SESSION['phproxy_network'] ?? [],
+            network_current_url: $_url
         );
         $_panel_inner_html = ob_get_clean();
 
@@ -2803,7 +2843,10 @@ function phproxy_render_panel_tabs(
     string $cli_url = '',
     string $cli_method = 'GET',
     array $cli_headers = [],
-    string $cli_body = ''
+    string $cli_body = '',
+    bool $show_network = false,
+    array $network_entries = [],
+    string $network_current_url = ''
 ): void {
     // Local aliases keep the existing template body unchanged
     $_panel_return_to      = $return_to;
@@ -2818,6 +2861,9 @@ function phproxy_render_panel_tabs(
     $_panel_cli_method     = $cli_method;
     $_panel_cli_headers    = $cli_headers;
     $_panel_cli_body       = $cli_body;
+    $_panel_show_network   = $show_network;
+    $_panel_network        = $network_entries;
+    $_panel_net_current    = $network_current_url;
 
 $_panel_return_html = $_panel_return_to !== ''
     ? '<input type="hidden" name="return_to" value="' . htmlspecialchars($_panel_return_to, ENT_QUOTES) . '"/>'
@@ -2844,6 +2890,9 @@ $_ua_presets_local = $GLOBALS['_ua_presets'] ?? [];
     <?php if ($_panel_show_cli): ?>
     <input type="radio" name="tab" id="tab-cli"<?php echo $_panel_active_tab === 'cli' ? ' checked' : ''; ?>/>
     <?php endif; ?>
+    <?php if ($_panel_show_network): ?>
+    <input type="radio" name="tab" id="tab-network"<?php echo $_panel_active_tab === 'network' ? ' checked' : ''; ?>/>
+    <?php endif; ?>
 
     <nav class="tabs">
         <label for="tab-options">Options</label>
@@ -2854,6 +2903,9 @@ $_ua_presets_local = $GLOBALS['_ua_presets'] ?? [];
         <?php endif; ?>
         <?php if ($_panel_show_cli): ?>
         <label for="tab-cli">CLI</label>
+        <?php endif; ?>
+        <?php if ($_panel_show_network): ?>
+        <label for="tab-network">Network <span class="tab-count"><?php echo count($_panel_network); ?></span></label>
         <?php endif; ?>
     </nav>
 
@@ -3167,11 +3219,99 @@ foreach ($_v_cookies as $_wire => $_c):
         </div>
     </section>
     <?php endif; ?>
+
+    <?php if ($_panel_show_network): ?>
+    <section class="tab-panel" data-tab="network">
+        <div class="tab-toolbar">
+            <p class="tab-help">Every URL the proxy has fetched on your behalf, newest first. The current page is highlighted. <?php echo count($_panel_network); ?>/50 entries.</p>
+            <form class="toolbar-toggle" method="post" action="?action=clear-network">
+                <?php echo $_panel_return_html; ?>
+                <button type="submit" class="button-ghost" title="Clear the Network log">Clear</button>
+            </form>
+        </div>
+<?php if (empty($_panel_network)): ?>
+        <ul class="kv-list"><li class="empty">No requests logged yet</li></ul>
+<?php else: ?>
+        <table class="net-table">
+            <thead>
+                <tr>
+                    <th>URL</th>
+                    <th>Method</th>
+                    <th>Status</th>
+                    <th>Type</th>
+                    <th class="num">Size</th>
+                    <th class="num">TTFB</th>
+                    <th class="num">Time</th>
+                </tr>
+            </thead>
+            <tbody>
+<?php
+$_net_rev = array_reverse($_panel_network);
+foreach ($_net_rev as $_ne):
+    $_is_current = $_ne['url'] === $_panel_net_current;
+    $_status_class = 'st-other';
+    if ($_ne['status'] >= 200 && $_ne['status'] < 300) $_status_class = 'st-2xx';
+    elseif ($_ne['status'] >= 300 && $_ne['status'] < 400) $_status_class = 'st-3xx';
+    elseif ($_ne['status'] >= 400 && $_ne['status'] < 500) $_status_class = 'st-4xx';
+    elseif ($_ne['status'] >= 500) $_status_class = 'st-5xx';
+?>
+                <tr<?php echo $_is_current ? ' class="current"' : ''; ?>>
+                    <td class="url" title="<?php echo htmlspecialchars($_ne['url']); ?>"><?php echo htmlspecialchars(mb_strimwidth($_ne['url'], 0, 78, '…')); ?></td>
+                    <td class="method"><?php echo htmlspecialchars($_ne['method']); ?></td>
+                    <td class="status <?php echo $_status_class; ?>"><?php echo (int) $_ne['status']; ?></td>
+                    <td class="type"><?php echo htmlspecialchars($_ne['type']); ?></td>
+                    <td class="num"><?php echo phproxy_fmt_size((int) $_ne['size']); ?></td>
+                    <td class="num"><?php echo (int) $_ne['ttfb_ms']; ?> ms</td>
+                    <td class="num"><?php echo (int) $_ne['duration_ms']; ?> ms</td>
+                </tr>
+<?php endforeach; ?>
+            </tbody>
+        </table>
+<?php endif; ?>
+    </section>
+    <?php endif; ?>
 </div>
 <?php
 }
 
 // --- EMBEDDED STYLESHEETS (served via ?asset=...) ---
+
+/**
+ * Append a request to the Network tab log kept in $_SESSION. Kept to the
+ * last 50 entries so the cookie-backed session file doesn't grow without
+ * bound. Times are in float seconds (microtime(true)); rendering converts
+ * them to ms.
+ */
+function phproxy_net_log(string $url, string $method, int $status, string $type, int $size, float $start, ?float $ttfb_t, float $end): void
+{
+    if (!isset($_SESSION) || !is_array($_SESSION)) return;
+    if (!isset($_SESSION['phproxy_network']) || !is_array($_SESSION['phproxy_network'])) $_SESSION['phproxy_network'] = [];
+    $ttfb_ms     = $ttfb_t !== null ? (int) (($ttfb_t - $start) * 1000) : 0;
+    $duration_ms = (int) (($end - $start) * 1000);
+    $_SESSION['phproxy_network'][] = [
+        'ts'          => $start,
+        'url'         => $url,
+        'method'      => $method,
+        'status'      => $status,
+        'type'        => $type !== '' ? $type : 'unknown',
+        'size'        => $size,
+        'ttfb_ms'     => $ttfb_ms,
+        'duration_ms' => $duration_ms,
+    ];
+    if (count($_SESSION['phproxy_network']) > 50) {
+        $_SESSION['phproxy_network'] = array_slice($_SESSION['phproxy_network'], -50);
+    }
+}
+
+/**
+ * Format a byte count for the Network table.
+ */
+function phproxy_fmt_size(int $bytes): string
+{
+    if ($bytes < 1024)     return $bytes . ' B';
+    if ($bytes < 1048576)  return number_format($bytes / 1024, 1)    . ' KB';
+    return                 number_format($bytes / 1048576, 1) . ' MB';
+}
 
 /**
  * CLI snippet helpers — build copy-pasteable code that replicates the
@@ -4632,7 +4772,8 @@ function phproxy_panel_css(): string {
 #phproxy-panel #tab-cookies:checked  ~ .tabs label[for="tab-cookies"],
 #phproxy-panel #tab-headers:checked  ~ .tabs label[for="tab-headers"],
 #phproxy-panel #tab-response:checked ~ .tabs label[for="tab-response"],
-#phproxy-panel #tab-cli:checked      ~ .tabs label[for="tab-cli"] {
+#phproxy-panel #tab-cli:checked      ~ .tabs label[for="tab-cli"],
+#phproxy-panel #tab-network:checked  ~ .tabs label[for="tab-network"] {
     color: var(--accent);
     border-bottom-color: var(--accent);
 }
@@ -4642,9 +4783,57 @@ function phproxy_panel_css(): string {
 #phproxy-panel #tab-cookies:checked  ~ .tab-panel[data-tab="cookies"],
 #phproxy-panel #tab-headers:checked  ~ .tab-panel[data-tab="headers"],
 #phproxy-panel #tab-response:checked ~ .tab-panel[data-tab="response"],
-#phproxy-panel #tab-cli:checked      ~ .tab-panel[data-tab="cli"] {
+#phproxy-panel #tab-cli:checked      ~ .tab-panel[data-tab="cli"],
+#phproxy-panel #tab-network:checked  ~ .tab-panel[data-tab="network"] {
     display: block;
 }
+
+/* Network tab — dev-tools-style request log */
+#phproxy-panel .net-table {
+    width: 100%;
+    border-collapse: collapse;
+    font: 12.5px var(--font-mono);
+    color: var(--text);
+}
+#phproxy-panel .net-table th,
+#phproxy-panel .net-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    vertical-align: top;
+    white-space: nowrap;
+}
+#phproxy-panel .net-table thead th {
+    position: sticky;
+    top: 0;
+    background: var(--surface-2);
+    color: var(--text-muted);
+    font: 600 11px var(--font);
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border-strong);
+}
+#phproxy-panel .net-table td.num,
+#phproxy-panel .net-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+#phproxy-panel .net-table td.url {
+    max-width: 0;
+    width: 50%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text);
+}
+#phproxy-panel .net-table td.method { color: var(--accent); font-weight: 600; }
+#phproxy-panel .net-table td.type   { color: var(--text-muted); }
+#phproxy-panel .net-table td.status { font-weight: 600; }
+#phproxy-panel .net-table td.status.st-2xx { color: var(--success); }
+#phproxy-panel .net-table td.status.st-3xx { color: var(--warning); }
+#phproxy-panel .net-table td.status.st-4xx { color: var(--danger); }
+#phproxy-panel .net-table td.status.st-5xx { color: var(--danger); }
+#phproxy-panel .net-table tr.current { background: var(--accent-soft); }
+#phproxy-panel .net-table tr.current td { font-weight: 600; }
+#phproxy-panel .net-table tr:hover td { background: rgba(0,0,0,.02); }
+#phproxy-panel[data-theme="dark"] .net-table tr:hover td { background: rgba(255,255,255,.03); }
 
 /* CLI tab — sub-tabs for curl / PHP / Python / JS / Go */
 #phproxy-panel .cli-wrap > input[type="radio"] {
