@@ -318,6 +318,204 @@ if (isset($_GET['api']) && $_GET['api'] === 'cert') {
     exit;
 }
 
+// --- IP INFO API (?api=ipinfo[&ip=1.2.3.4]) ------------------------------
+// Returns information about the client, the server, and the server's
+// outgoing IP — plus ASN / country / AS-name / BGP prefix for each, looked
+// up from Team Cymru's public WHOIS service over a plain TCP socket. No
+// library, no API key, no per-IP HTTP roundtrip. City data is NOT
+// returned: it requires a GeoIP database (MaxMind GeoLite2 etc.) which
+// we don't ship to keep the project a single self-contained file.
+if (isset($_GET['api']) && $_GET['api'] === 'ipinfo') {
+    header('Content-Type: application/json; charset=utf-8');
+    $started = microtime(true);
+
+    // If the caller passed ?ip=…, that's the single IP we describe.
+    $custom_ip = trim((string) ($_GET['ip'] ?? ''));
+    if ($custom_ip !== '' && !filter_var($custom_ip, FILTER_VALIDATE_IP)) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Invalid IP address', 'received' => $custom_ip]);
+        exit;
+    }
+
+    $remote  = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+    $xff_raw = (string) ($_SERVER['HTTP_X_FORWARDED_FOR'] ?? '');
+    $xff_chain = [];
+    if ($xff_raw !== '') {
+        foreach (explode(',', $xff_raw) as $h) {
+            $h = trim($h);
+            if ($h !== '' && filter_var($h, FILTER_VALIDATE_IP)) $xff_chain[] = $h;
+        }
+    }
+    // Prefer the first XFF entry (original client) when behind a reverse proxy.
+    $client_ip = !empty($xff_chain) ? $xff_chain[0] : $remote;
+
+    // Server's own primary IP via gethostbyname(hostname). Often the
+    // internal Docker IP — useful but not "what the internet sees".
+    $hostname  = gethostname() ?: '';
+    $server_ip = '';
+    if ($hostname !== '') {
+        $resolved = @gethostbyname($hostname);
+        if ($resolved !== false && $resolved !== $hostname) $server_ip = $resolved;
+    }
+
+    // Real outgoing IP — what the internet actually sees when this server
+    // makes outbound HTTP calls. UDP "connect" trick: no packets sent,
+    // but the kernel picks the outgoing interface so the local socket
+    // name gives us the right answer.
+    $outgoing_ip = phproxy_outgoing_ip();
+
+    // Collect all IPs needing ASN/country/AS-name into one batch.
+    $lookup_ips = [];
+    if ($custom_ip !== '') $lookup_ips[] = $custom_ip;
+    foreach ([$client_ip, $server_ip, $outgoing_ip] as $ip) {
+        if ($ip !== '' && filter_var($ip, FILTER_VALIDATE_IP)) $lookup_ips[] = $ip;
+    }
+    foreach ($xff_chain as $ip) $lookup_ips[] = $ip;
+    $lookup_ips = array_values(array_unique($lookup_ips));
+    $cymru = phproxy_cymru_whois($lookup_ips, 2.0);
+
+    $shape = function (string $ip) use ($cymru): array {
+        if ($ip === '') return ['ip' => ''];
+        $info = $cymru[$ip] ?? [];
+        $is_priv = !filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE);
+        return [
+            'ip'         => $ip,
+            'family'     => str_contains($ip, ':') ? 'IPv6' : 'IPv4',
+            'is_private' => (bool) $is_priv,
+            'reverse'    => $is_priv ? '' : (@gethostbyaddr($ip) ?: ''),
+            'asn'        => $info['asn']       ?? null,
+            'asn_name'   => $info['asn_name']  ?? '',
+            'country'    => $info['country']   ?? '',
+            'prefix'     => $info['prefix']    ?? '',
+            'registry'   => $info['registry']  ?? '',
+            'allocated'  => $info['allocated'] ?? '',
+        ];
+    };
+
+    if ($custom_ip !== '') {
+        echo json_encode([
+            'ok'          => true,
+            'lookup'      => $shape($custom_ip),
+            'duration_ms' => (int) ((microtime(true) - $started) * 1000),
+        ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+        exit;
+    }
+
+    echo json_encode([
+        'ok'        => true,
+        'client'    => $shape($client_ip),
+        'server'    => $shape($server_ip),
+        'outgoing'  => $shape($outgoing_ip),
+        'forwarded' => array_map($shape, $xff_chain),
+        'request'   => [
+            'method'          => $_SERVER['REQUEST_METHOD']      ?? '',
+            'protocol'        => isset($_SERVER['HTTPS']) || ($_SERVER['SERVER_PORT'] ?? '') == '443' ? 'HTTPS' : 'HTTP',
+            'remote_addr'     => $remote,
+            'host_header'     => $_SERVER['HTTP_HOST']            ?? '',
+            'user_agent'      => $_SERVER['HTTP_USER_AGENT']      ?? '',
+            'accept_language' => $_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? '',
+            'accept'          => $_SERVER['HTTP_ACCEPT']          ?? '',
+            'referer'         => $_SERVER['HTTP_REFERER']         ?? '',
+            'dnt'             => $_SERVER['HTTP_DNT']             ?? '',
+            'sec_gpc'         => $_SERVER['HTTP_SEC_GPC']         ?? '',
+            'sec_ch_ua'       => $_SERVER['HTTP_SEC_CH_UA']       ?? '',
+            'sec_ch_ua_mobile'=> $_SERVER['HTTP_SEC_CH_UA_MOBILE']?? '',
+            'sec_ch_ua_platform' => $_SERVER['HTTP_SEC_CH_UA_PLATFORM'] ?? '',
+        ],
+        'host'      => [
+            'hostname'        => $hostname,
+            'php_version'     => PHP_VERSION,
+            'php_os'          => PHP_OS,
+            'server_software' => $_SERVER['SERVER_SOFTWARE'] ?? '',
+            'server_port'     => $_SERVER['SERVER_PORT']     ?? '',
+        ],
+        'sources' => [
+            'asn'      => 'whois.cymru.com:43 (TCP, RFC 3912)',
+            'reverse'  => 'gethostbyaddr() — system resolver',
+            'outgoing' => 'UDP connect trick — no packets sent',
+            'city'     => 'unavailable — requires a GeoIP database',
+        ],
+        'duration_ms' => (int) ((microtime(true) - $started) * 1000),
+    ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+    exit;
+}
+
+/**
+ * Determine the outgoing IPv4 address this server uses when reaching out
+ * to the wider internet. UDP "connect" trick: no packets are actually
+ * sent, but the kernel picks the outgoing interface so stream_socket_get_name
+ * on the local side returns the right answer.
+ */
+function phproxy_outgoing_ip(): string
+{
+    $sock = @stream_socket_client('udp://1.1.1.1:53', $en, $es, 1);
+    if ($sock === false) {
+        $sock = @stream_socket_client('udp://8.8.8.8:53', $en, $es, 1);
+    }
+    if ($sock === false) return '';
+    $name = @stream_socket_get_name($sock, false);  // local side
+    @fclose($sock);
+    if (!is_string($name) || $name === '') return '';
+    // "1.2.3.4:54321" or "[::1]:54321" — strip port.
+    if (preg_match('/^\[([^\]]+)\]:\d+$/', $name, $m)) return $m[1];
+    if (preg_match('/^([0-9.]+):\d+$/', $name, $m))    return $m[1];
+    return $name;
+}
+
+/**
+ * Batch IP→ASN lookup against Team Cymru's public WHOIS service. One TCP
+ * round-trip for any number of IPs. Pure stream_socket_client; no library.
+ * Returns: [ip => ['asn'=>int|null,'prefix','country','registry','allocated','asn_name']]
+ */
+function phproxy_cymru_whois(array $ips, float $timeout = 2.0): array
+{
+    $ips = array_values(array_filter($ips, fn($ip) => filter_var($ip, FILTER_VALIDATE_IP)));
+    if (empty($ips)) return [];
+    // Skip private/loopback — Cymru won't have ASNs for them.
+    $public = [];
+    foreach ($ips as $ip) {
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+            $public[] = $ip;
+        }
+    }
+    if (empty($public)) return [];
+
+    $sock = @stream_socket_client('tcp://whois.cymru.com:43', $en, $es, $timeout);
+    if ($sock === false) return [];
+    stream_set_timeout($sock, (int) $timeout, (int) (($timeout - (int) $timeout) * 1_000_000));
+    $query = "begin\nverbose\n" . implode("\n", $public) . "\nend\n";
+    @fwrite($sock, $query);
+    $response = '';
+    while (!feof($sock)) {
+        $chunk = @fgets($sock, 4096);
+        if ($chunk === false) break;
+        $response .= $chunk;
+        $st = stream_get_meta_data($sock);
+        if (!empty($st['timed_out'])) break;
+    }
+    @fclose($sock);
+
+    // Pipe-delimited verbose output. Header line starts with "AS".
+    // Example: "13335   | 1.1.1.1   | 1.1.1.0/24 | US | arin | 2010-07-14 | CLOUDFLARENET, US"
+    $out = [];
+    foreach (explode("\n", $response) as $line) {
+        $line = trim($line);
+        if ($line === '' || stripos($line, 'Bulk mode;') === 0 || stripos($line, 'AS ') === 0) continue;
+        $parts = array_map('trim', explode('|', $line));
+        if (count($parts) < 7) continue;
+        $ip = $parts[1];
+        $out[$ip] = [
+            'asn'       => ctype_digit($parts[0]) ? (int) $parts[0] : null,
+            'prefix'    => $parts[2],
+            'country'   => $parts[3],
+            'registry'  => $parts[4],
+            'allocated' => $parts[5],
+            'asn_name'  => $parts[6],
+        ];
+    }
+    return $out;
+}
+
 if (isset($_GET['api']) && $_GET['api'] === 'fetch') {
     // Helper for any JSON error response in this dispatcher
     $api_json_err = function (int $status, string $msg, array $extra = []): void {
@@ -2898,6 +3096,43 @@ CSS;
             .         "else if(e.event==='end'){s.done=true;s.duration_ms=e.duration_ms;var ao=s.open>0,ac=s.closed>0;out.className='netcheck-result '+(ao&&!ac?'ok':(ao?'warn':'err'));renderPort(out,s);}"
             .       "}"
             .     "}}"
+            .   "function escH(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}"
+            .   "function ipCard(role,d){"
+            .     "if(!d||!d.ip)return '<div class=\"ipinfo-card\"><div class=\"ipinfo-card-title\">'+role+'</div><div class=\"ipinfo-row\"><span class=\"k\">(not available)</span></div></div>';"
+            .     "var fam=d.family?'<span class=\"ipinfo-family\">'+d.family+'</span>':'';"
+            .     "var priv=d.is_private?'<span class=\"ipinfo-private\">private</span>':'';"
+            .     "var r='';function row(k,v){return v?'<div class=\"ipinfo-row\"><span class=\"k\">'+k+'</span><span class=\"v\">'+v+'</span></div>':'';}"
+            .     "r+=row('Reverse',d.reverse||'');"
+            .     "if(d.asn)r+='<div class=\"ipinfo-row ipinfo-asn\"><span class=\"k\">ASN</span><span class=\"v\"><span class=\"ipinfo-asn-num\">AS'+d.asn+'</span> '+(d.asn_name||'')+'</span></div>';"
+            .     "r+=row('Country',d.country?'<span class=\"ipinfo-flag\">'+d.country+'</span>':'');"
+            .     "r+=row('Prefix',d.prefix||'');r+=row('Registry',d.registry||'');"
+            .     "return '<div class=\"ipinfo-card\"><div class=\"ipinfo-card-title\">'+role+(priv?'  '+priv:'')+'</div><div class=\"ipinfo-ip\">'+(d.ip||'—')+fam+'</div>'+r+'</div>';"
+            .   "}"
+            .   "function ipKv(title,o){if(!o)return '';var r='';Object.keys(o).forEach(function(k){var v=o[k];if(v==null)return;var lb=k.replace(/_/g,' ');r+='<div class=\"k\">'+lb+'</div><div class=\"v'+(v===''?' empty':'')+'\">'+(v===''?'—':escH(v))+'</div>';});return r?('<div class=\"ipinfo-section\"><h4>'+title+'</h4><div class=\"ipinfo-grid\">'+r+'</div></div>'):'';}"
+            .   "var ipT=document.querySelector('[data-ipinfo-target]');"
+            .   "if(ipT){(async function(){"
+            .     "try{var r=await fetch(nbase+'?api=ipinfo');var j=await r.json();"
+            .       "if(j.ok===false){ipT.innerHTML='<div class=\"ipinfo-loading\">Failed: '+escH(j.error||'unknown')+'</div>';return;}"
+            .       "ipT.innerHTML=ipCard('Client',j.client)+ipCard('Server',j.server)+ipCard('Outgoing',j.outgoing);"
+            .       "var ex='';if(j.forwarded&&j.forwarded.length){var hops=j.forwarded.map(function(h){return h.ip+(h.asn?' (AS'+h.asn+' '+h.country+')':'');}).join(' → ');ex+='<div class=\"ipinfo-section\"><h4>X-Forwarded-For chain</h4><div class=\"ipinfo-grid\"><div class=\"k\">hops</div><div class=\"v\">'+escH(hops)+'</div></div></div>';}"
+            .       "ex+=ipKv('Request',j.request);ex+=ipKv('Host',j.host);ex+=ipKv('Sources',j.sources);"
+            .       "ipT.insertAdjacentHTML('afterend',ex);"
+            .     "}catch(e){ipT.innerHTML='<div class=\"ipinfo-loading\">Network error: '+escH(e&&e.message?e.message:e)+'</div>';}"
+            .   "})();}"
+            .   "document.querySelectorAll('form[data-ipinfo-lookup]').forEach(function(f){"
+            .     "var o=f.querySelector('.netcheck-result'),b=f.querySelector('button[type=\"submit\"]');"
+            .     "f.addEventListener('submit',async function(ev){ev.preventDefault();var ip=f.querySelector('input[name=\"ip\"]').value.trim();if(!ip)return;o.hidden=false;o.className='netcheck-result busy';o.textContent='Looking up '+ip+'…';b.disabled=true;"
+            .       "try{var r=await fetch(nbase+'?api=ipinfo&ip='+encodeURIComponent(ip));var j=await r.json();"
+            .         "if(j.ok===false){o.className='netcheck-result err';o.textContent='ERROR  '+(j.error||'request failed');return;}"
+            .         "var L=j.lookup||{},lines=[L.ip+'   '+L.family+(L.is_private?'   (private)':'')];"
+            .         "if(L.reverse)lines.push('reverse:    '+L.reverse);if(L.asn)lines.push('ASN:        AS'+L.asn+'  '+L.asn_name);"
+            .         "if(L.country)lines.push('country:    '+L.country);if(L.prefix)lines.push('prefix:     '+L.prefix);"
+            .         "if(L.registry)lines.push('registry:   '+L.registry);if(L.allocated)lines.push('allocated:  '+L.allocated);"
+            .         "lines.push('','lookup time: '+(j.duration_ms||0)+' ms');"
+            .         "o.className='netcheck-result ok';o.textContent=lines.join('\\n');"
+            .       "}catch(e){o.className='netcheck-result err';o.textContent='Network error: '+(e&&e.message?e.message:e);}finally{b.disabled=false;}"
+            .     "});"
+            .   "});"
             .   "document.querySelectorAll('form[data-netcheck]').forEach(function(f){"
             .     "var kind=f.getAttribute('data-netcheck');"
             .     "var out=f.querySelector('.netcheck-result');"
@@ -2971,7 +3206,7 @@ $_current_ua      = isset($_COOKIE['userAgent']) ? $_COOKIE['userAgent'] : '';
 $_ua_presets      = phproxy_ua_presets();
 
 $_active_tab = isset($_GET['tab']) ? (string) $_GET['tab'] : 'options';
-$_valid_tabs = ['options' => 1, 'cookies' => 1, 'headers' => 1, 'port' => 1, 'dns' => 1, 'cert' => 1, 'cli' => 1];
+$_valid_tabs = ['options' => 1, 'cookies' => 1, 'headers' => 1, 'ip' => 1, 'port' => 1, 'dns' => 1, 'cert' => 1, 'cli' => 1];
 if (!isset($_valid_tabs[$_active_tab])) $_active_tab = 'options';
 ?>
 
@@ -3354,6 +3589,120 @@ phproxy_render_panel_tabs(
         });
     }
     document.querySelectorAll('form[data-netcheck]').forEach(bindNetcheck);
+
+    // IP tab — render the three identity cards plus the request / host sections.
+    function renderIpinfoCard(role, data) {
+        if (!data || !data.ip) {
+            return '<div class="ipinfo-card"><div class="ipinfo-card-title">' + role + '</div>' +
+                   '<div class="ipinfo-row"><span class="k">(not available)</span></div></div>';
+        }
+        var fam = data.family ? '<span class="ipinfo-family">' + data.family + '</span>' : '';
+        var priv = data.is_private ? '<span class="ipinfo-private">private</span>' : '';
+        var rows = '';
+        function row(k, v) {
+            if (!v) return '';
+            return '<div class="ipinfo-row"><span class="k">' + k + '</span><span class="v">' + v + '</span></div>';
+        }
+        rows += row('Reverse', data.reverse || '');
+        if (data.asn) {
+            rows += '<div class="ipinfo-row ipinfo-asn"><span class="k">ASN</span><span class="v"><span class="ipinfo-asn-num">AS' + data.asn + '</span> ' + (data.asn_name || '') + '</span></div>';
+        }
+        rows += row('Country', data.country ? '<span class="ipinfo-flag">' + data.country + '</span>' : '');
+        rows += row('Prefix', data.prefix || '');
+        rows += row('Registry', data.registry || '');
+        return '<div class="ipinfo-card">' +
+                 '<div class="ipinfo-card-title">' + role + (priv ? '  ' + priv : '') + '</div>' +
+                 '<div class="ipinfo-ip">' + (data.ip || '—') + fam + '</div>' +
+                 rows +
+               '</div>';
+    }
+    function renderIpinfoKv(title, obj) {
+        if (!obj) return '';
+        var rows = '';
+        Object.keys(obj).forEach(function (k) {
+            var v = obj[k];
+            if (v === null || v === undefined) return;
+            var label = k.replace(/_/g, ' ');
+            if (v === '') {
+                rows += '<div class="k">' + label + '</div><div class="v empty">—</div>';
+            } else {
+                rows += '<div class="k">' + label + '</div><div class="v">' + String(v).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }) + '</div>';
+            }
+        });
+        if (!rows) return '';
+        return '<div class="ipinfo-section"><h4>' + title + '</h4><div class="ipinfo-grid">' + rows + '</div></div>';
+    }
+    function escHtml(s) {
+        return String(s == null ? '' : s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; });
+    }
+    async function loadIpinfo(target) {
+        try {
+            var r = await fetch('?api=ipinfo', { headers: { 'Accept': 'application/json' } });
+            var j = await r.json();
+            if (j.ok === false) {
+                target.innerHTML = '<div class="ipinfo-loading">Failed: ' + escHtml(j.error || 'unknown') + '</div>';
+                return;
+            }
+            var html  = renderIpinfoCard('Client',   j.client);
+            html     += renderIpinfoCard('Server',   j.server);
+            html     += renderIpinfoCard('Outgoing', j.outgoing);
+            target.innerHTML = html;
+            var extra = '';
+            if (j.forwarded && j.forwarded.length) {
+                var hops = j.forwarded.map(function (h) { return h.ip + (h.asn ? ' (AS' + h.asn + ' ' + h.country + ')' : ''); }).join(' → ');
+                extra += '<div class="ipinfo-section"><h4>X-Forwarded-For chain</h4><div class="ipinfo-grid"><div class="k">hops</div><div class="v">' + escHtml(hops) + '</div></div></div>';
+            }
+            extra += renderIpinfoKv('Request', j.request);
+            extra += renderIpinfoKv('Host',    j.host);
+            extra += renderIpinfoKv('Sources', j.sources);
+            target.insertAdjacentHTML('afterend', extra);
+        } catch (e) {
+            target.innerHTML = '<div class="ipinfo-loading">Network error: ' + escHtml(e && e.message ? e.message : e) + '</div>';
+        }
+    }
+    var ipTarget = document.querySelector('[data-ipinfo-target]');
+    if (ipTarget) loadIpinfo(ipTarget);
+
+    // Custom IP lookup form inside the IP tab
+    document.querySelectorAll('form[data-ipinfo-lookup]').forEach(function (form) {
+        var out = form.querySelector('.netcheck-result');
+        var btn = form.querySelector('button[type="submit"]');
+        form.addEventListener('submit', async function (ev) {
+            ev.preventDefault();
+            var ip = form.querySelector('input[name="ip"]').value.trim();
+            if (!ip) return;
+            out.hidden = false;
+            out.className = 'netcheck-result busy';
+            out.textContent = 'Looking up ' + ip + '…';
+            btn.disabled = true;
+            try {
+                var r = await fetch('?api=ipinfo&ip=' + encodeURIComponent(ip));
+                var j = await r.json();
+                if (j.ok === false) {
+                    out.className = 'netcheck-result err';
+                    out.textContent = 'ERROR  ' + (j.error || 'request failed');
+                    return;
+                }
+                var L = j.lookup || {};
+                var lines = [L.ip + '   ' + L.family + (L.is_private ? '   (private)' : '')];
+                if (L.reverse)   lines.push('reverse:    ' + L.reverse);
+                if (L.asn)       lines.push('ASN:        AS' + L.asn + '  ' + L.asn_name);
+                if (L.country)   lines.push('country:    ' + L.country);
+                if (L.prefix)    lines.push('prefix:     ' + L.prefix);
+                if (L.registry)  lines.push('registry:   ' + L.registry);
+                if (L.allocated) lines.push('allocated:  ' + L.allocated);
+                lines.push('');
+                lines.push('lookup time: ' + (j.duration_ms || 0) + ' ms');
+                out.className = 'netcheck-result ok';
+                out.textContent = lines.join('\n');
+            } catch (e) {
+                out.className = 'netcheck-result err';
+                out.textContent = 'Network error: ' + (e && e.message ? e.message : e);
+            } finally {
+                btn.disabled = false;
+            }
+        });
+    });
 })();
 </script>
 </body>
@@ -3417,6 +3766,7 @@ $_ua_presets_local = $GLOBALS['_ua_presets'] ?? [];
     <input type="radio" name="tab" id="tab-options"<?php echo $_panel_active_tab === 'options' ? ' checked' : ''; ?>/>
     <input type="radio" name="tab" id="tab-cookies"<?php echo $_panel_active_tab === 'cookies' ? ' checked' : ''; ?>/>
     <input type="radio" name="tab" id="tab-headers"<?php echo $_panel_active_tab === 'headers' ? ' checked' : ''; ?>/>
+    <input type="radio" name="tab" id="tab-ip"<?php echo $_panel_active_tab === 'ip' ? ' checked' : ''; ?>/>
     <input type="radio" name="tab" id="tab-port"<?php echo $_panel_active_tab === 'port' ? ' checked' : ''; ?>/>
     <input type="radio" name="tab" id="tab-dns"<?php echo $_panel_active_tab === 'dns' ? ' checked' : ''; ?>/>
     <input type="radio" name="tab" id="tab-cert"<?php echo $_panel_active_tab === 'cert' ? ' checked' : ''; ?>/>
@@ -3432,6 +3782,7 @@ $_ua_presets_local = $GLOBALS['_ua_presets'] ?? [];
         <label for="tab-options">Options</label>
         <label for="tab-cookies">Cookies <span class="tab-count"><?php echo count($_v_cookies); ?></span></label>
         <label for="tab-headers">Headers <span class="tab-count"><?php echo count($_c_headers); ?></span></label>
+        <label for="tab-ip">IP</label>
         <label for="tab-port">Port</label>
         <label for="tab-dns">DNS</label>
         <label for="tab-cert">SSL</label>
@@ -3669,6 +4020,22 @@ foreach ($_v_cookies as $_wire => $_c):
             <input type="text" name="headerAddName" placeholder="Accept-Language" pattern="[A-Za-z0-9-]+" autocomplete="off"/>
             <input type="text" name="headerAddValue" placeholder="en-GB,en;q=0.9" autocomplete="off"/>
             <button type="submit">Add</button>
+        </form>
+    </section>
+
+    <section class="tab-panel" data-tab="ip">
+        <p class="tab-help">Network identity for the current request. <strong>Client</strong> is who you appear as to this server; <strong>Outgoing</strong> is what the wider internet sees when the server reaches out. ASN / country / AS name / BGP prefix come from Team Cymru's public WHOIS service over TCP/43. City data isn't shown — it requires a GeoIP database which we don't ship.</p>
+        <div class="ipinfo-wrap" data-ipinfo-target>
+            <div class="ipinfo-loading">Looking up IPs…</div>
+        </div>
+        <hr class="divider"/>
+        <p class="section-label">Look up any IP</p>
+        <form class="netcheck netcheck-solo" data-ipinfo-lookup autocomplete="off">
+            <div class="netcheck-fields">
+                <input type="text" name="ip" placeholder="1.1.1.1  or  2606:4700:4700::1111" required spellcheck="false" autocapitalize="off"/>
+                <button class="button-submit" type="submit">Look up</button>
+            </div>
+            <pre class="netcheck-result" hidden></pre>
         </form>
     </section>
 
@@ -4319,7 +4686,13 @@ function phproxy_cli_checks_curl(string $base): string
     $u_dns        = $base . '?api=dns&host=example.com&type=A';
     $u_cert       = $base . '?api=cert&host=example.com&port=443';
     $u_port_stream = $base . '?api=portcheck&host=example.com&port=22-30&stream=1';
-    return "# Port check — single port\n"
+    $u_ip_self     = $base . '?api=ipinfo';
+    $u_ip_lookup   = $base . '?api=ipinfo&ip=1.1.1.1';
+    return "# IP info — client + server + outgoing IP (ASN, country, AS-name, reverse DNS)\n"
+         . 'curl ' . phproxy_snip_shell($u_ip_self) . "\n\n"
+         . "# IP info — look up any IP (IPv4 or IPv6)\n"
+         . 'curl ' . phproxy_snip_shell($u_ip_lookup) . "\n\n"
+         . "# Port check — single port\n"
          . 'curl ' . phproxy_snip_shell($u_port_one) . "\n\n"
          . "# Port check — inclusive range\n"
          . 'curl ' . phproxy_snip_shell($u_port_range) . "\n\n"
@@ -4337,6 +4710,10 @@ function phproxy_cli_checks_php(string $base): string
 {
     $out  = "<?php\n";
     $out .= '$base = ' . phproxy_snip_php($base) . ";\n\n";
+    $out .= "// IP info — me, the server, my outgoing IP, ASN, country\n";
+    $out .= "\$ipinfo = json_decode(file_get_contents(\$base . '?api=ipinfo'), true);\n";
+    $out .= "printf(\"client:   %s   AS%s %s\\n\", \$ipinfo['client']['ip'], \$ipinfo['client']['asn'] ?? '?', \$ipinfo['client']['country'] ?? '');\n";
+    $out .= "printf(\"outgoing: %s   AS%s %s\\n\", \$ipinfo['outgoing']['ip'], \$ipinfo['outgoing']['asn'] ?? '?', \$ipinfo['outgoing']['country'] ?? '');\n\n";
     $out .= "// Port check — accepts: 443  |  80-443  |  22,80,443,8000-8010  (max 128)\n";
     $out .= "\$port = json_decode(file_get_contents(\$base . '?api=portcheck&host=example.com&port=80-443'), true);\n";
     $out .= "foreach (\$port['results'] as \$r) {\n";
@@ -4355,6 +4732,10 @@ function phproxy_cli_checks_python(string $base): string
 {
     $out  = "import requests\n\n";
     $out .= 'base = ' . phproxy_snip_php($base) . "\n\n";
+    $out .= "# IP info — me, the server, my outgoing IP, ASN, country\n";
+    $out .= "ip = requests.get(base, params={'api': 'ipinfo'}).json()\n";
+    $out .= "print(f\"client:   {ip['client']['ip']}   AS{ip['client'].get('asn','?')} {ip['client'].get('country','')}\")\n";
+    $out .= "print(f\"outgoing: {ip['outgoing']['ip']}   AS{ip['outgoing'].get('asn','?')} {ip['outgoing'].get('country','')}\")\n\n";
     $out .= "# Port check — accepts: 443  |  80-443  |  22,80,443,8000-8010  (max 128)\n";
     $out .= "scan = requests.get(base, params={'api': 'portcheck', 'host': 'example.com', 'port': '80-443'}).json()\n";
     $out .= "for r in scan['results']:\n";
@@ -4370,6 +4751,10 @@ function phproxy_cli_checks_js(string $base): string
 {
     $b = phproxy_snip_php($base);
     return "const base = $b;\n\n"
+         . "// IP info — me, the server, my outgoing IP, ASN, country\n"
+         . "const ip = await fetch(base + '?api=ipinfo').then(r => r.json());\n"
+         . "console.log(`client:   \${ip.client.ip}   AS\${ip.client.asn ?? '?'} \${ip.client.country ?? ''}`);\n"
+         . "console.log(`outgoing: \${ip.outgoing.ip}   AS\${ip.outgoing.asn ?? '?'} \${ip.outgoing.country ?? ''}`);\n\n"
          . "// Port check — accepts: 443  |  80-443  |  22,80,443,8000-8010  (max 128)\n"
          . "const scan = await fetch(base + '?api=portcheck&host=example.com&port=80-443').then(r => r.json());\n"
          . "for (const r of scan.results) {\n"
@@ -4403,6 +4788,8 @@ function phproxy_cli_checks_go(string $base): string
     $out .= "}\n\n";
     $out .= "func main() {\n";
     $out .= '    base := ' . $b . "\n\n";
+    $out .= "    // IP info — me, the server, my outgoing IP, ASN, country\n";
+    $out .= "    fmt.Println(get(base + \"?api=ipinfo\"))\n\n";
     $out .= "    // Port check — accepts: 443  |  80-443  |  22,80,443,8000-8010  (max 128)\n";
     $out .= "    scan := get(base + \"?api=portcheck&host=example.com&port=80-443\")\n";
     $out .= "    for _, r := range scan[\"results\"].([]any) {\n";
@@ -4996,6 +5383,7 @@ p.info { background: var(--success-soft); color: var(--text); border-left: 3px s
 #tab-options:checked  ~ .tabs label[for="tab-options"],
 #tab-cookies:checked  ~ .tabs label[for="tab-cookies"],
 #tab-headers:checked  ~ .tabs label[for="tab-headers"],
+#tab-ip:checked       ~ .tabs label[for="tab-ip"],
 #tab-port:checked     ~ .tabs label[for="tab-port"],
 #tab-dns:checked      ~ .tabs label[for="tab-dns"],
 #tab-cert:checked     ~ .tabs label[for="tab-cert"],
@@ -5010,6 +5398,7 @@ p.info { background: var(--success-soft); color: var(--text); border-left: 3px s
 #tab-options:checked  ~ .tab-panel[data-tab="options"],
 #tab-cookies:checked  ~ .tab-panel[data-tab="cookies"],
 #tab-headers:checked  ~ .tab-panel[data-tab="headers"],
+#tab-ip:checked       ~ .tab-panel[data-tab="ip"],
 #tab-port:checked     ~ .tab-panel[data-tab="port"],
 #tab-dns:checked      ~ .tab-panel[data-tab="dns"],
 #tab-cert:checked     ~ .tab-panel[data-tab="cert"],
@@ -5448,6 +5837,131 @@ p.info { background: var(--success-soft); color: var(--text); border-left: 3px s
 .netcheck-result.warn  { border-color: var(--warning); background: var(--warning-soft); }
 .netcheck-result.busy  { color: var(--text-muted); font-style: italic; }
 
+/* IP tab — identity cards (client / server / outgoing) + request/host info */
+.ipinfo-wrap {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+.ipinfo-loading {
+    grid-column: 1 / -1;
+    padding: 24px;
+    text-align: center;
+    color: var(--text-muted);
+    font-style: italic;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+}
+.ipinfo-card {
+    padding: 12px 14px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+.ipinfo-card-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+}
+.ipinfo-ip {
+    font-family: var(--font-mono);
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+    word-break: break-all;
+}
+.ipinfo-ip .ipinfo-family {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font: 600 10px var(--font);
+    letter-spacing: .04em;
+    vertical-align: middle;
+}
+.ipinfo-row {
+    display: flex;
+    gap: 8px;
+    font-size: 13px;
+    min-width: 0;
+}
+.ipinfo-row .k {
+    flex: 0 0 78px;
+    color: var(--text-muted);
+}
+.ipinfo-row .v {
+    flex: 1 1 auto;
+    color: var(--text);
+    min-width: 0;
+    word-break: break-all;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+}
+.ipinfo-asn .ipinfo-asn-num {
+    font-weight: 600;
+}
+.ipinfo-private {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--warning-soft);
+    color: var(--warning);
+    font: 600 10px var(--font);
+    letter-spacing: .04em;
+}
+.ipinfo-flag {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    font: 600 11px var(--font-mono);
+    color: var(--text);
+}
+.ipinfo-section {
+    margin-top: 14px;
+    padding: 12px 14px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+.ipinfo-section h4 {
+    margin: 0 0 8px 0;
+    font: 600 11px var(--font);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+.ipinfo-grid {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    gap: 4px 12px;
+    font-size: 13px;
+}
+.ipinfo-grid .k { color: var(--text-muted); }
+.ipinfo-grid .v {
+    color: var(--text);
+    word-break: break-all;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+}
+.ipinfo-grid .v.empty { color: var(--text-muted); font-style: italic; font-family: var(--font); font-size: 13px; }
+
+/* Wide grid layout for the three identity cards spans the full ip tab. */
+@media (max-width: 720px) {
+    .ipinfo-wrap { grid-template-columns: 1fr; }
+    .ipinfo-grid { grid-template-columns: 120px 1fr; }
+}
+
 /* CLI tab — base styles (entry page). The panel-scoped equivalents live
    under #phproxy-panel so proxied-page injection doesn't leak rules to
    the host document. */
@@ -5863,6 +6377,7 @@ function phproxy_panel_css(): string {
 #phproxy-panel #tab-options:checked  ~ .tabs label[for="tab-options"],
 #phproxy-panel #tab-cookies:checked  ~ .tabs label[for="tab-cookies"],
 #phproxy-panel #tab-headers:checked  ~ .tabs label[for="tab-headers"],
+#phproxy-panel #tab-ip:checked       ~ .tabs label[for="tab-ip"],
 #phproxy-panel #tab-port:checked     ~ .tabs label[for="tab-port"],
 #phproxy-panel #tab-dns:checked      ~ .tabs label[for="tab-dns"],
 #phproxy-panel #tab-cert:checked     ~ .tabs label[for="tab-cert"],
@@ -5877,6 +6392,7 @@ function phproxy_panel_css(): string {
 #phproxy-panel #tab-options:checked  ~ .tab-panel[data-tab="options"],
 #phproxy-panel #tab-cookies:checked  ~ .tab-panel[data-tab="cookies"],
 #phproxy-panel #tab-headers:checked  ~ .tab-panel[data-tab="headers"],
+#phproxy-panel #tab-ip:checked       ~ .tab-panel[data-tab="ip"],
 #phproxy-panel #tab-port:checked     ~ .tab-panel[data-tab="port"],
 #phproxy-panel #tab-dns:checked      ~ .tab-panel[data-tab="dns"],
 #phproxy-panel #tab-cert:checked     ~ .tab-panel[data-tab="cert"],
@@ -5932,6 +6448,124 @@ function phproxy_panel_css(): string {
 #phproxy-panel .net-table tr.current td { font-weight: 600; }
 #phproxy-panel .net-table tr:hover td { background: rgba(0,0,0,.02); }
 #phproxy-panel[data-theme="dark"] .net-table tr:hover td { background: rgba(255,255,255,.03); }
+
+/* IP tab — identity cards + sections */
+#phproxy-panel .ipinfo-wrap {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+#phproxy-panel .ipinfo-loading {
+    grid-column: 1 / -1;
+    padding: 24px;
+    text-align: center;
+    color: var(--text-muted);
+    font-style: italic;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+}
+#phproxy-panel .ipinfo-card {
+    padding: 12px 14px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+#phproxy-panel .ipinfo-card-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+}
+#phproxy-panel .ipinfo-ip {
+    font-family: var(--font-mono);
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+    word-break: break-all;
+}
+#phproxy-panel .ipinfo-ip .ipinfo-family {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font: 600 10px var(--font);
+    letter-spacing: .04em;
+    vertical-align: middle;
+}
+#phproxy-panel .ipinfo-row {
+    display: flex;
+    gap: 8px;
+    font-size: 13px;
+    min-width: 0;
+}
+#phproxy-panel .ipinfo-row .k { flex: 0 0 78px; color: var(--text-muted); }
+#phproxy-panel .ipinfo-row .v {
+    flex: 1 1 auto;
+    color: var(--text);
+    min-width: 0;
+    word-break: break-all;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+}
+#phproxy-panel .ipinfo-asn .ipinfo-asn-num { font-weight: 600; }
+#phproxy-panel .ipinfo-private {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--warning-soft);
+    color: var(--warning);
+    font: 600 10px var(--font);
+    letter-spacing: .04em;
+}
+#phproxy-panel .ipinfo-flag {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    font: 600 11px var(--font-mono);
+    color: var(--text);
+}
+#phproxy-panel .ipinfo-section {
+    margin-top: 14px;
+    padding: 12px 14px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+#phproxy-panel .ipinfo-section h4 {
+    margin: 0 0 8px 0;
+    font: 600 11px var(--font);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+#phproxy-panel .ipinfo-grid {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    gap: 4px 12px;
+    font-size: 13px;
+}
+#phproxy-panel .ipinfo-grid .k { color: var(--text-muted); }
+#phproxy-panel .ipinfo-grid .v {
+    color: var(--text);
+    word-break: break-all;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+}
+#phproxy-panel .ipinfo-grid .v.empty { color: var(--text-muted); font-style: italic; font-family: var(--font); font-size: 13px; }
+@media (max-width: 720px) {
+    #phproxy-panel .ipinfo-wrap { grid-template-columns: 1fr; }
+    #phproxy-panel .ipinfo-grid { grid-template-columns: 120px 1fr; }
+}
 
 /* CLI tab — sub-tabs for curl / PHP / Python / JS / Go */
 #phproxy-panel .cli-wrap > input[type="radio"] {
