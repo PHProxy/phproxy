@@ -90,30 +90,96 @@ if (isset($_GET['api']) && $_GET['api'] === 'dns') {
 }
 
 // --- PORT CHECK API (?api=portcheck&host=example.com&port=443) ---------
+// `port` accepts a single port (443), an inclusive range (80-443) or a
+// comma-separated mix (22,80,443,8000-8010). Hard cap is 128 ports per
+// request; default per-port timeout is 1.0s, override with ?timeout=…
+// (clamped 0.1–5.0). Response always carries a `results` array.
 if (isset($_GET['api']) && $_GET['api'] === 'portcheck') {
     header('Content-Type: application/json; charset=utf-8');
-    $host = (string) ($_GET['host'] ?? '');
-    $port = (int)    ($_GET['port'] ?? 0);
+    $host      = (string) ($_GET['host'] ?? '');
+    $port_spec = (string) ($_GET['port'] ?? '');
+    $timeout   = (float)  ($_GET['timeout'] ?? 1.0);
+    if ($timeout < 0.1) $timeout = 0.1;
+    if ($timeout > 5.0) $timeout = 5.0;
     if (!$phproxy_api_validate_host($host)) {
         http_response_code(400);
         echo json_encode(['ok' => false, 'error' => 'Invalid or blacklisted host']);
         exit;
     }
-    if ($port < 1 || $port > 65535) {
+    $ports = phproxy_parse_port_spec($port_spec);
+    if ($ports === false) {
         http_response_code(400);
-        echo json_encode(['ok' => false, 'error' => 'Invalid port (1–65535)']);
+        echo json_encode(['ok' => false, 'error' => 'Invalid port spec. Examples: 443, 80-443, 22,80,443,8000-8010', 'received' => $port_spec]);
         exit;
     }
-    $started = microtime(true);
-    $sock    = @stream_socket_client("tcp://$host:$port", $errno, $errstr, 5);
-    $ms      = (int) ((microtime(true) - $started) * 1000);
-    if ($sock === false) {
-        echo json_encode(['ok' => true, 'host' => $host, 'port' => $port, 'reachable' => false, 'error' => $errstr, 'errno' => (int) $errno, 'latency_ms' => $ms]);
+    if (count($ports) > 128) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Too many ports requested (max 128)', 'requested' => count($ports)]);
         exit;
     }
-    fclose($sock);
-    echo json_encode(['ok' => true, 'host' => $host, 'port' => $port, 'reachable' => true, 'latency_ms' => $ms]);
+    $scan_started = microtime(true);
+    $results = [];
+    foreach ($ports as $p) {
+        $t0   = microtime(true);
+        $sock = @stream_socket_client("tcp://$host:$p", $errno, $errstr, $timeout);
+        $ms   = (int) ((microtime(true) - $t0) * 1000);
+        if ($sock === false) {
+            $results[] = ['port' => $p, 'reachable' => false, 'error' => $errstr ?: 'connect failed', 'errno' => (int) $errno, 'latency_ms' => $ms];
+        } else {
+            fclose($sock);
+            $results[] = ['port' => $p, 'reachable' => true, 'latency_ms' => $ms];
+        }
+    }
+    $duration = (int) ((microtime(true) - $scan_started) * 1000);
+    $open     = 0;
+    foreach ($results as $r) if (!empty($r['reachable'])) $open++;
+    echo json_encode([
+        'ok'           => true,
+        'host'         => $host,
+        'port_spec'    => $port_spec,
+        'count'        => count($results),
+        'open'         => $open,
+        'closed'       => count($results) - $open,
+        'timeout_s'    => $timeout,
+        'duration_ms'  => $duration,
+        'results'      => $results,
+    ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
     exit;
+}
+
+/**
+ * Parse a port spec — single, range, or comma list — into a sorted,
+ * deduped array of ints. Returns false on any syntax error or out-of-range.
+ *   "443"            → [443]
+ *   "80-443"         → [80, 81, …, 443]
+ *   "22,80,443"      → [22, 80, 443]
+ *   "80,8000-8010"   → [80, 8000, …, 8010]
+ */
+function phproxy_parse_port_spec(string $spec): array|false
+{
+    $spec = trim($spec);
+    if ($spec === '') return false;
+    $set = [];
+    foreach (explode(',', $spec) as $chunk) {
+        $chunk = trim($chunk);
+        if ($chunk === '') continue;
+        if (strpos($chunk, '-') !== false) {
+            $parts = explode('-', $chunk, 2);
+            $a = (int) trim($parts[0]);
+            $b = (int) trim($parts[1]);
+            if ($a < 1 || $a > 65535 || $b < 1 || $b > 65535 || $b < $a) return false;
+            for ($i = $a; $i <= $b; $i++) $set[$i] = true;
+        } else {
+            if (!ctype_digit($chunk)) return false;
+            $p = (int) $chunk;
+            if ($p < 1 || $p > 65535) return false;
+            $set[$p] = true;
+        }
+        if (count($set) > 1024) return false;  // hard ceiling to prevent memory abuse; dispatcher rejects >128 with a clearer error
+    }
+    if (empty($set)) return false;
+    ksort($set);
+    return array_keys($set);
 }
 
 // --- SSL CERT INSPECTOR API (?api=cert&host=example.com&port=443) ------
@@ -2779,7 +2845,14 @@ CSS;
             .         ".then(function(r){return r.json();})"
             .         ".then(function(j){"
             .           "if(j.ok===false){out.className='netcheck-result err';out.textContent='ERROR  '+(j.error||'request failed')+(j.host?'\\nhost: '+j.host:'');return;}"
-            .           "if(kind==='portcheck'){out.className='netcheck-result '+(j.reachable?'ok':'warn');out.textContent=(j.reachable?'OPEN  ':'CLOSED  ')+j.host+':'+j.port+'\\nlatency: '+(j.latency_ms||0)+' ms'+(j.error?'\\nerror: '+j.error:'');}"
+            .           "if(kind==='portcheck'){"
+            .             "var rs=j.results||[],ao=(j.open||0)>0,ac=(j.closed||0)>0;"
+            .             "out.className='netcheck-result '+(ao&&!ac?'ok':(ao?'warn':'err'));"
+            .             "var mp=0;rs.forEach(function(r){if(String(r.port).length>mp)mp=String(r.port).length;});"
+            .             "var L=[j.host+'   '+j.count+' port'+(j.count===1?'':'s')+'   open: '+j.open+'   closed: '+j.closed+'   ('+(j.duration_ms||0)+' ms)',''];"
+            .             "rs.forEach(function(r){var ps=String(r.port);while(ps.length<mp)ps=' '+ps;L.push(ps+(r.reachable?'  OPEN    '+r.latency_ms+' ms':'  CLOSED  '+(r.error||'unreachable')+'   '+(r.latency_ms||0)+' ms'));});"
+            .             "out.textContent=L.join('\\n');"
+            .           "}"
             .           "else if(kind==='dns'){"
             .             "if(!j.records||!j.records.length){out.className='netcheck-result warn';out.textContent='No '+j.type+' records for '+j.host+'  ('+j.duration_ms+' ms)';return;}"
             .             "var L=[j.host+'  '+j.type+'  '+j.records.length+' record(s)  ('+j.duration_ms+' ms)',''];"
@@ -3018,13 +3091,25 @@ phproxy_render_panel_tabs(
 
     // Network-check cards (Port / DNS / SSL) — fetch the API and render
     function fmtPortcheck(j) {
-        if (j.reachable) {
-            return 'OPEN  ' + j.host + ':' + j.port + '\nlatency: ' + j.latency_ms + ' ms';
-        }
-        return 'CLOSED  ' + j.host + ':' + j.port +
-               '\nerror: ' + (j.error || 'unreachable') +
-               (j.errno ? ' (errno ' + j.errno + ')' : '') +
-               '\nlatency: ' + (j.latency_ms || 0) + ' ms';
+        var results = j.results || [];
+        if (!results.length) return 'No ports scanned';
+        var header = j.host + '   ' + j.count + ' port' + (j.count === 1 ? '' : 's') +
+                     '   open: ' + j.open + '   closed: ' + j.closed +
+                     '   (' + (j.duration_ms || 0) + ' ms)';
+        // Sequential -> show one line per port, aligned
+        var maxPort = 0;
+        results.forEach(function (r) { if (String(r.port).length > maxPort) maxPort = String(r.port).length; });
+        var lines = [header, ''];
+        results.forEach(function (r) {
+            var portStr = String(r.port);
+            while (portStr.length < maxPort) portStr = ' ' + portStr;
+            if (r.reachable) {
+                lines.push(portStr + '  OPEN    ' + r.latency_ms + ' ms');
+            } else {
+                lines.push(portStr + '  CLOSED  ' + (r.error || 'unreachable') + '   ' + (r.latency_ms || 0) + ' ms');
+            }
+        });
+        return lines.join('\n');
     }
     function fmtDns(j) {
         if (!j.records || !j.records.length) {
@@ -3098,7 +3183,9 @@ phproxy_render_panel_tabs(
                         return;
                     }
                     if (kind === 'portcheck') {
-                        out.className = 'netcheck-result ' + (j.reachable ? 'ok' : 'warn');
+                        var anyOpen = (j.open || 0) > 0;
+                        var anyClosed = (j.closed || 0) > 0;
+                        out.className = 'netcheck-result ' + (anyOpen && !anyClosed ? 'ok' : (anyOpen ? 'warn' : 'err'));
                         out.textContent = fmtPortcheck(j);
                     } else if (kind === 'dns') {
                         out.className = 'netcheck-result ' + (j.records && j.records.length ? 'ok' : 'warn');
@@ -3439,11 +3526,11 @@ foreach ($_v_cookies as $_wire => $_c):
     </section>
 
     <section class="tab-panel" data-tab="port">
-        <p class="tab-help">Test TCP reachability and measure connection latency for any host the server can reach. Loopback and RFC1918 hosts are blocked.</p>
+        <p class="tab-help">Test TCP reachability and measure connection latency. A single port (<code>443</code>), an inclusive range (<code>80-443</code>) or a comma list (<code>22,80,443,8000-8010</code>) — up to 128 ports per scan. Loopback / RFC1918 hosts are blocked.</p>
         <form class="netcheck netcheck-solo" data-netcheck="portcheck" autocomplete="off">
             <div class="netcheck-fields">
                 <input type="text" name="host" placeholder="host.example.com" required spellcheck="false" autocapitalize="off"/>
-                <input type="number" name="port" placeholder="443" min="1" max="65535" required/>
+                <input type="text" name="port" placeholder="443  or  80-443  or  22,80,443" pattern="[0-9,\-\s]+" required spellcheck="false" autocapitalize="off"/>
             </div>
             <button class="button-submit" type="submit">Check port</button>
             <pre class="netcheck-result" hidden></pre>
@@ -4079,11 +4166,17 @@ function phproxy_cli_go_proxy(string $api_url, string $upstream, string $method,
  */
 function phproxy_cli_checks_curl(string $base): string
 {
-    $u_port = $base . '?api=portcheck&host=example.com&port=443';
-    $u_dns  = $base . '?api=dns&host=example.com&type=A';
-    $u_cert = $base . '?api=cert&host=example.com&port=443';
-    return "# Port check — TCP reach + latency\n"
-         . 'curl ' . phproxy_snip_shell($u_port) . "\n\n"
+    $u_port_one   = $base . '?api=portcheck&host=example.com&port=443';
+    $u_port_range = $base . '?api=portcheck&host=example.com&port=80-443';
+    $u_port_list  = $base . '?api=portcheck&host=example.com&port=22,80,443,8000-8010';
+    $u_dns        = $base . '?api=dns&host=example.com&type=A';
+    $u_cert       = $base . '?api=cert&host=example.com&port=443';
+    return "# Port check — single port\n"
+         . 'curl ' . phproxy_snip_shell($u_port_one) . "\n\n"
+         . "# Port check — inclusive range\n"
+         . 'curl ' . phproxy_snip_shell($u_port_range) . "\n\n"
+         . "# Port check — comma-list, mixed with ranges (max 128 ports)\n"
+         . 'curl ' . phproxy_snip_shell($u_port_list) . "\n\n"
          . "# DNS lookup — A / AAAA / MX / TXT / NS / SOA / CAA / CNAME / SRV / ANY\n"
          . 'curl ' . phproxy_snip_shell($u_dns) . "\n\n"
          . "# SSL handshake + cert chain inspection\n"
@@ -4094,9 +4187,11 @@ function phproxy_cli_checks_php(string $base): string
 {
     $out  = "<?php\n";
     $out .= '$base = ' . phproxy_snip_php($base) . ";\n\n";
-    $out .= "// Port check\n";
-    $out .= "\$port = json_decode(file_get_contents(\$base . '?api=portcheck&host=example.com&port=443'), true);\n";
-    $out .= "print_r(\$port);\n\n";
+    $out .= "// Port check — accepts: 443  |  80-443  |  22,80,443,8000-8010  (max 128)\n";
+    $out .= "\$port = json_decode(file_get_contents(\$base . '?api=portcheck&host=example.com&port=80-443'), true);\n";
+    $out .= "foreach (\$port['results'] as \$r) {\n";
+    $out .= "    printf(\"%5d  %s  %d ms\\n\", \$r['port'], \$r['reachable'] ? 'OPEN  ' : 'CLOSED', \$r['latency_ms']);\n";
+    $out .= "}\n\n";
     $out .= "// DNS lookup\n";
     $out .= "\$dns = json_decode(file_get_contents(\$base . '?api=dns&host=example.com&type=A'), true);\n";
     $out .= "print_r(\$dns);\n\n";
@@ -4108,14 +4203,16 @@ function phproxy_cli_checks_php(string $base): string
 
 function phproxy_cli_checks_python(string $base): string
 {
-    $out  = "import json, requests\n\n";
+    $out  = "import requests\n\n";
     $out .= 'base = ' . phproxy_snip_php($base) . "\n\n";
-    $out .= "# Port check\n";
-    $out .= "print(json.dumps(requests.get(base, params={'api': 'portcheck', 'host': 'example.com', 'port': 443}).json(), indent=2))\n\n";
+    $out .= "# Port check — accepts: 443  |  80-443  |  22,80,443,8000-8010  (max 128)\n";
+    $out .= "scan = requests.get(base, params={'api': 'portcheck', 'host': 'example.com', 'port': '80-443'}).json()\n";
+    $out .= "for r in scan['results']:\n";
+    $out .= "    print(f\"{r['port']:>5}  {'OPEN  ' if r['reachable'] else 'CLOSED'}  {r['latency_ms']} ms\")\n\n";
     $out .= "# DNS lookup\n";
-    $out .= "print(json.dumps(requests.get(base, params={'api': 'dns', 'host': 'example.com', 'type': 'A'}).json(), indent=2))\n\n";
+    $out .= "print(requests.get(base, params={'api': 'dns', 'host': 'example.com', 'type': 'A'}).json())\n\n";
     $out .= "# SSL cert inspect\n";
-    $out .= "print(json.dumps(requests.get(base, params={'api': 'cert', 'host': 'example.com', 'port': 443}).json(), indent=2))";
+    $out .= "print(requests.get(base, params={'api': 'cert', 'host': 'example.com', 'port': 443}).json())";
     return $out;
 }
 
@@ -4123,9 +4220,11 @@ function phproxy_cli_checks_js(string $base): string
 {
     $b = phproxy_snip_php($base);
     return "const base = $b;\n\n"
-         . "// Port check\n"
-         . "const port = await fetch(base + '?api=portcheck&host=example.com&port=443').then(r => r.json());\n"
-         . "console.log(port);\n\n"
+         . "// Port check — accepts: 443  |  80-443  |  22,80,443,8000-8010  (max 128)\n"
+         . "const scan = await fetch(base + '?api=portcheck&host=example.com&port=80-443').then(r => r.json());\n"
+         . "for (const r of scan.results) {\n"
+         . "    console.log(`\${String(r.port).padStart(5)}  \${r.reachable ? 'OPEN  ' : 'CLOSED'}  \${r.latency_ms} ms`);\n"
+         . "}\n\n"
          . "// DNS lookup\n"
          . "const dns = await fetch(base + '?api=dns&host=example.com&type=A').then(r => r.json());\n"
          . "console.log(dns);\n\n"
@@ -4153,8 +4252,15 @@ function phproxy_cli_checks_go(string $base): string
     $out .= "    return m\n";
     $out .= "}\n\n";
     $out .= "func main() {\n";
-    $out .= '    base := ' . $b . "\n";
-    $out .= "    fmt.Println(get(base + \"?api=portcheck&host=example.com&port=443\"))\n";
+    $out .= '    base := ' . $b . "\n\n";
+    $out .= "    // Port check — accepts: 443  |  80-443  |  22,80,443,8000-8010  (max 128)\n";
+    $out .= "    scan := get(base + \"?api=portcheck&host=example.com&port=80-443\")\n";
+    $out .= "    for _, r := range scan[\"results\"].([]any) {\n";
+    $out .= "        rr := r.(map[string]any)\n";
+    $out .= "        status := \"CLOSED\"\n";
+    $out .= "        if rr[\"reachable\"].(bool) { status = \"OPEN  \" }\n";
+    $out .= "        fmt.Printf(\"%5.0f  %s  %.0f ms\\n\", rr[\"port\"], status, rr[\"latency_ms\"])\n";
+    $out .= "    }\n\n";
     $out .= "    fmt.Println(get(base + \"?api=dns&host=example.com&type=A\"))\n";
     $out .= "    fmt.Println(get(base + \"?api=cert&host=example.com&port=443\"))\n";
     $out .= "}";
