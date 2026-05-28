@@ -22,10 +22,10 @@
 // self-contained — no files/ directory needed.
 if (isset($_GET['asset'])) {
     header('Cache-Control: public, max-age=3600');
-    header('Content-Type: text/css; charset=utf-8');
     switch ((string) $_GET['asset']) {
-        case 'index.css': echo phproxy_index_css(); exit;
-        case 'panel.css': echo phproxy_panel_css(); exit;
+        case 'index.css':   header('Content-Type: text/css; charset=utf-8');         echo phproxy_index_css(); exit;
+        case 'panel.css':   header('Content-Type: text/css; charset=utf-8');         echo phproxy_panel_css(); exit;
+        case 'netcheck.js': header('Content-Type: application/javascript; charset=utf-8'); echo phproxy_netcheck_js(); exit;
     }
     http_response_code(404);
     exit;
@@ -278,6 +278,8 @@ if (isset($_GET['api']) && $_GET['api'] === 'cert') {
     $parse_cert = function ($cert) {
         $p = @openssl_x509_parse($cert);
         if (!is_array($p)) return null;
+
+        // SAN entries — flatten DNS:/IP Address: prefixes for display
         $san = [];
         if (!empty($p['extensions']['subjectAltName'])) {
             foreach (explode(',', $p['extensions']['subjectAltName']) as $entry) {
@@ -287,13 +289,15 @@ if (isset($_GET['api']) && $_GET['api'] === 'cert') {
                 elseif ($entry !== '')                  $san[] = $entry;
             }
         }
-        // Extract public key type + size if possible.
-        $key_type = ''; $key_bits = 0; $key_curve = '';
+
+        // Public key — type, size, curve (EC), and the public-key PEM block
+        $key_type = ''; $key_bits = 0; $key_curve = ''; $pub_pem = '';
         $pub = @openssl_pkey_get_public($cert);
         if ($pub !== false) {
             $details = @openssl_pkey_get_details($pub);
             if (is_array($details)) {
                 $key_bits = (int) ($details['bits'] ?? 0);
+                $pub_pem  = (string) ($details['key'] ?? '');
                 $type_const = $details['type'] ?? -1;
                 if ($type_const === OPENSSL_KEYTYPE_RSA) $key_type = 'RSA';
                 elseif ($type_const === OPENSSL_KEYTYPE_DSA) $key_type = 'DSA';
@@ -304,23 +308,53 @@ if (isset($_GET['api']) && $_GET['api'] === 'cert') {
                 }
             }
         }
+
+        // Fingerprints — colon-separated like every cert tool prints them
+        $fmt_fp = function (string $hex): string {
+            $hex = strtoupper($hex);
+            return implode(':', str_split($hex, 2));
+        };
+        $fp_sha256 = @openssl_x509_fingerprint($cert, 'sha256') ?: '';
+        $fp_sha1   = @openssl_x509_fingerprint($cert, 'sha1')   ?: '';
+        $fp_md5    = @openssl_x509_fingerprint($cert, 'md5')    ?: '';
+
+        // Cert in PEM form (raw, full)
+        $pem = '';
+        @openssl_x509_export($cert, $pem);
+
         $valid_from = $p['validFrom_time_t'] ?? 0;
         $valid_to   = $p['validTo_time_t']   ?? 0;
         return [
-            'subject'       => $p['name'] ?? '',
-            'subject_cn'    => $p['subject']['CN']     ?? '',
-            'subject_org'   => $p['subject']['O']      ?? '',
-            'issuer_cn'     => $p['issuer']['CN']      ?? '',
-            'issuer_org'    => $p['issuer']['O']       ?? '',
-            'serial'        => $p['serialNumberHex']   ?? ($p['serialNumber'] ?? ''),
-            'valid_from'    => $valid_from ? gmdate('Y-m-d\TH:i:s\Z', $valid_from) : '',
-            'valid_to'      => $valid_to   ? gmdate('Y-m-d\TH:i:s\Z', $valid_to)   : '',
-            'days_left'     => $valid_to ? (int) floor(($valid_to - time()) / 86400) : 0,
-            'san'           => $san,
-            'sig_algorithm' => $p['signatureTypeSN'] ?? '',
-            'key_type'      => $key_type,
-            'key_bits'      => $key_bits,
-            'key_curve'     => $key_curve,
+            'version'        => (int) ($p['version'] ?? 0) + 1,   // X.509 reports 0/1/2; humans say v1/v2/v3
+            'serial_hex'     => $p['serialNumberHex'] ?? '',
+            'serial_dec'     => (string) ($p['serialNumber'] ?? ''),
+            'subject'        => $p['name']    ?? '',
+            'subject_parts'  => $p['subject'] ?? [],   // full DN as keyed array (CN, O, OU, C, ST, L, …)
+            'subject_cn'     => $p['subject']['CN'] ?? '',
+            'subject_org'    => $p['subject']['O']  ?? '',
+            'issuer_dn'      => isset($p['issuer']) ? phproxy_dn_join($p['issuer']) : '',
+            'issuer_parts'   => $p['issuer'] ?? [],
+            'issuer_cn'      => $p['issuer']['CN'] ?? '',
+            'issuer_org'     => $p['issuer']['O']  ?? '',
+            'valid_from'     => $valid_from ? gmdate('Y-m-d\TH:i:s\Z', $valid_from) : '',
+            'valid_to'       => $valid_to   ? gmdate('Y-m-d\TH:i:s\Z', $valid_to)   : '',
+            'days_left'      => $valid_to ? (int) floor(($valid_to - time()) / 86400) : 0,
+            'san'            => $san,
+            'sig_algorithm'  => $p['signatureTypeSN'] ?? '',
+            'sig_algorithm_long' => $p['signatureTypeLN'] ?? '',
+            'sig_oid'        => isset($p['signatureTypeNID']) ? (string) $p['signatureTypeNID'] : '',
+            'purposes'       => $p['purposes'] ?? [],
+            'extensions'     => $p['extensions'] ?? [],   // all extensions, raw text per OpenSSL
+            'key_type'       => $key_type,
+            'key_bits'       => $key_bits,
+            'key_curve'      => $key_curve,
+            'public_key_pem' => $pub_pem,
+            'fingerprints'   => [
+                'sha256' => $fp_sha256 ? $fmt_fp($fp_sha256) : '',
+                'sha1'   => $fp_sha1   ? $fmt_fp($fp_sha1)   : '',
+                'md5'    => $fp_md5    ? $fmt_fp($fp_md5)    : '',
+            ],
+            'pem'            => $pem,
         ];
     };
     $cert_info  = $parse_cert($leaf);
@@ -492,6 +526,25 @@ if (isset($_GET['api']) && $_GET['api'] === 'ipinfo') {
         'duration_ms' => (int) ((microtime(true) - $started) * 1000),
     ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
     exit;
+}
+
+/**
+ * Build a single-line DN string from the keyed array openssl_x509_parse()
+ * returns. Order matches what `openssl x509 -text` prints.
+ */
+function phproxy_dn_join(array $parts): string
+{
+    $order = ['C', 'ST', 'L', 'O', 'OU', 'CN', 'emailAddress', 'serialNumber'];
+    $out = [];
+    foreach ($order as $k) {
+        if (isset($parts[$k]) && $parts[$k] !== '') $out[] = "$k=" . (is_array($parts[$k]) ? implode('+', $parts[$k]) : $parts[$k]);
+    }
+    foreach ($parts as $k => $v) {
+        if (in_array($k, $order, true)) continue;
+        if ($v === '' || $v === null) continue;
+        $out[] = "$k=" . (is_array($v) ? implode('+', $v) : $v);
+    }
+    return implode(', ', $out);
 }
 
 /**
@@ -3030,8 +3083,10 @@ CSS;
         $_panel_inner_html = ob_get_clean();
 
         // Compose the entire injection: bar + (hidden) toggle checkbox + panel
+        $_netcheck_js_safe = htmlspecialchars($_script_base . '?asset=netcheck.js&v=' . $_version, ENT_QUOTES);
         $_url_form = '<style id="phproxy-bar-style">' . $_bar_css . '</style>'
             . '<link rel="stylesheet" href="' . $_css_link_safe . '"/>'
+            . '<script src="' . $_netcheck_js_safe . '" defer></script>'
             . '<input type="checkbox" id="phproxy-panel-toggle"' . ($_panel_open ? ' checked' : '') . '/>'
             . '<div id="phproxy-bar">'
             .   '<form class="row" method="post" action="' . $_action_safe . '">'
@@ -3147,14 +3202,10 @@ CSS;
             .           "j.records.forEach(function(r){var k=r.type||j.type,v=r.ip||r.ipv6||r.target||r.txt||r.value||r.mname||(r.tag?r.tag+' \"'+r.value+'\"':JSON.stringify(r));L.push(k+'  '+v+(r.ttl!=null?'   ttl '+r.ttl:''));});"
             .           "out.className='netcheck-result ok';out.textContent=L.join('\\n');"
             .         "} else if(kind==='cert'){"
-            .           "var x=j.leaf||{},N=j.negotiated||{},d=x.days_left,st=d<0?'EXPIRED '+Math.abs(d)+'d ago':(d<30?'expires in '+d+'d (warning)':'expires in '+d+'d');"
-            .           "var kd=x.key_type?(x.key_type+' '+x.key_bits+(x.key_curve?' ('+x.key_curve+')':'')):'?';"
-            .           "var L=[j.host+':'+j.port+'   ('+(j.duration_ms||0)+' ms)','','negotiated:  '+(N.protocol||'?')+'   '+(N.cipher_name||'?')+(N.cipher_bits?'  ('+N.cipher_bits+'-bit)':''),''];"
-            .           "if(j.tls_versions&&j.tls_versions.length){L.push('TLS versions:');j.tls_versions.forEach(function(v){var lbl=(v.version+'   ').slice(0,9);if(v.supported)L.push('  '+lbl+' ✓   '+(v.cipher_name||'')+(v.cipher_bits?'  ('+v.cipher_bits+'-bit)':''));else L.push('  '+lbl+' ✗   '+(v.error||'unsupported'));});L.push('');}"
-            .           "L.push('subject:     '+(x.subject_cn||'(none)'));L.push('issuer:      '+(x.issuer_cn||'(none)'));L.push('valid:       '+(x.valid_from||'?')+'  →  '+(x.valid_to||'?'));L.push('status:      '+st);L.push('sig algo:    '+(x.sig_algorithm||'?'));L.push('public key:  '+kd);"
-            .           "if(x.san&&x.san.length)L.push('SAN:         '+x.san.slice(0,12).join(', '));"
-            .           "if(j.chain_length){L.push('','chain ('+j.chain_length+'):');(j.chain||[]).forEach(function(c,i){L.push('  '+i+'. '+(c.subject_cn||'?')+'   ←  '+(c.issuer_cn||'?'));});}"
-            .           "out.className='netcheck-result '+(d!=null&&d<0?'err':(d!=null&&d<30?'warn':'ok'));out.textContent=L.join('\\n');"
+            .           "var d=(j.leaf&&j.leaf.days_left);"
+            .           "out.className='netcheck-result cert-result '+(d!=null&&d<0?'err':(d!=null&&d<30?'warn':'ok'));"
+            .           "if(window.phproxyFmtCertHtml){out.innerHTML=window.phproxyFmtCertHtml(j);if(window.phproxyBindCertCopy)window.phproxyBindCertCopy(out);}"
+            .           "else{out.textContent='Cert renderer still loading — try again in a moment.';}"
             .         "}"
             .       "}catch(e){out.className='netcheck-result err';out.textContent='Network error: '+(e&&e.message?e.message:e);}finally{btn.disabled=false;}"
             .     "});"
@@ -3214,6 +3265,7 @@ if (!isset($_valid_tabs[$_active_tab])) $_active_tab = 'options';
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <title><?php echo htmlspecialchars($GLOBALS['_config']['site_name']); ?></title>
     <link rel="stylesheet" href="?asset=index.css&amp;v=<?php echo htmlspecialchars($GLOBALS['_version']); ?>"/>
+    <script src="?asset=netcheck.js&amp;v=<?php echo htmlspecialchars($GLOBALS['_version']); ?>" defer></script>
     <script>
     (function () {
         var s = null;
@@ -3443,52 +3495,8 @@ phproxy_render_panel_tabs(
         });
         return lines.join('\n');
     }
-    function fmtCert(j) {
-        var L = j.leaf || {};
-        var N = j.negotiated || {};
-        var days = L.days_left;
-        var status = days < 0 ? 'EXPIRED ' + Math.abs(days) + 'd ago'
-                   : days < 30 ? 'expires in ' + days + 'd (warning)'
-                   : 'expires in ' + days + 'd';
-        var keyDesc = L.key_type
-            ? L.key_type + ' ' + L.key_bits + (L.key_curve ? ' (' + L.key_curve + ')' : '')
-            : '?';
-        var lines = [
-            j.host + ':' + j.port + '   (' + (j.duration_ms || 0) + ' ms)',
-            '',
-            'negotiated:  ' + (N.protocol || '?') + '   ' + (N.cipher_name || '?') + (N.cipher_bits ? '  (' + N.cipher_bits + '-bit)' : ''),
-            '',
-        ];
-        if (j.tls_versions && j.tls_versions.length) {
-            lines.push('TLS versions:');
-            j.tls_versions.forEach(function (v) {
-                if (v.supported) {
-                    lines.push('  ' + (v.version + '   ').slice(0, 9) + ' ✓   ' + (v.cipher_name || '') +
-                               (v.cipher_bits ? '  (' + v.cipher_bits + '-bit)' : ''));
-                } else {
-                    lines.push('  ' + (v.version + '   ').slice(0, 9) + ' ✗   ' + (v.error || 'unsupported'));
-                }
-            });
-            lines.push('');
-        }
-        lines.push('subject:     ' + (L.subject_cn || '(none)') + (L.subject_org ? '  /  ' + L.subject_org : ''));
-        lines.push('issuer:      ' + (L.issuer_cn || '(none)')  + (L.issuer_org  ? '  /  ' + L.issuer_org  : ''));
-        lines.push('valid:       ' + (L.valid_from || '?') + '  →  ' + (L.valid_to || '?'));
-        lines.push('status:      ' + status);
-        lines.push('sig algo:    ' + (L.sig_algorithm || '?'));
-        lines.push('public key:  ' + keyDesc);
-        if (L.san && L.san.length) {
-            lines.push('SAN:         ' + L.san.slice(0, 12).join(', ') + (L.san.length > 12 ? ' …(+' + (L.san.length - 12) + ')' : ''));
-        }
-        if (j.chain_length) {
-            lines.push('');
-            lines.push('chain (' + j.chain_length + '):');
-            (j.chain || []).forEach(function (c, i) {
-                lines.push('  ' + i + '. ' + (c.subject_cn || c.subject || '?') + '   ←  ' + (c.issuer_cn || '?'));
-            });
-        }
-        return lines.join('\n');
-    }
+    // Rich cert renderer (window.phproxyFmtCertHtml + phproxyBindCertCopy)
+    // is loaded from ?asset=netcheck.js and shared with the inline panel.
     // Render the port-check result panel from the current scan state.
     function renderPortRunning(out, state) {
         var lines = [
@@ -3590,8 +3598,9 @@ phproxy_render_panel_tabs(
                     out.textContent = fmtDns(j);
                 } else if (kind === 'cert') {
                     var d = j.leaf && j.leaf.days_left;
-                    out.className = 'netcheck-result ' + (d != null && d < 0 ? 'err' : (d != null && d < 30 ? 'warn' : 'ok'));
-                    out.textContent = fmtCert(j);
+                    out.className = 'netcheck-result cert-result ' + (d != null && d < 0 ? 'err' : (d != null && d < 30 ? 'warn' : 'ok'));
+                    out.innerHTML = window.phproxyFmtCertHtml(j);
+                    if (window.phproxyBindCertCopy) window.phproxyBindCertCopy(out);
                 } else {
                     out.className = 'netcheck-result ok';
                     out.textContent = JSON.stringify(j, null, 2);
@@ -4074,14 +4083,14 @@ foreach ($_v_cookies as $_wire => $_c):
     </section>
 
     <section class="tab-panel" data-tab="cert">
-        <p class="tab-help">Open an SSL/TLS handshake and inspect everything available: TLS versions the server accepts, cipher negotiated per version, public-key type / size, full certificate chain, expiry countdown.</p>
+        <p class="tab-help">Open an SSL/TLS handshake and inspect everything available: TLS versions the server accepts, the cipher negotiated per version, full certificate chain with every parsed extension, fingerprints, and the raw PEM blocks. All data comes from PHP's OpenSSL functions — no <code>openssl s_client</code> shell-out, no library.</p>
         <form class="netcheck netcheck-solo" data-netcheck="cert" autocomplete="off">
             <div class="netcheck-fields">
                 <input type="text" name="host" placeholder="example.com" required spellcheck="false" autocapitalize="off"/>
                 <input type="number" name="port" placeholder="443" min="1" max="65535" value="443" required/>
             </div>
             <button class="button-submit" type="submit">Inspect cert</button>
-            <pre class="netcheck-result" hidden></pre>
+            <div class="netcheck-result cert-result" hidden></div>
         </form>
     </section>
 
@@ -5048,6 +5057,173 @@ function phproxy_api_decode_chunked(string $body): string
     return $out;
 }
 
+/**
+ * Shared JS asset — defines window.phproxyFmtCertHtml(json) so both the
+ * entry-form script and the inline-panel script can render the rich
+ * cert detail HTML without duplicating ~100 lines of logic.
+ */
+function phproxy_netcheck_js(): string {
+    return <<<'PHPROXY_NETCHECK_JS'
+(function () {
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>]/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c];
+        });
+    }
+    function kvGrid(rows) {
+        var html = '';
+        rows.forEach(function (pair) {
+            var k = pair[0], v = pair[1];
+            if (v == null || v === '') return;
+            html += '<div class="cert-kv-k">' + esc(k) + '</div><div class="cert-kv-v">' + esc(v) + '</div>';
+        });
+        return html ? '<div class="cert-kv">' + html + '</div>' : '';
+    }
+    function dnGrid(parts) {
+        if (!parts || typeof parts !== 'object') return '';
+        var html = '';
+        Object.keys(parts).forEach(function (k) {
+            var v = parts[k];
+            if (Array.isArray(v)) v = v.join(' + ');
+            if (v === '' || v == null) return;
+            html += '<div class="cert-kv-k">' + esc(k) + '</div><div class="cert-kv-v">' + esc(String(v)) + '</div>';
+        });
+        return html ? '<div class="cert-kv">' + html + '</div>' : '';
+    }
+    function fmtKey(c) {
+        if (!c.key_type) return '';
+        return c.key_type + ' ' + c.key_bits + (c.key_curve ? ' (' + c.key_curve + ')' : '');
+    }
+    function fmtStatus(days) {
+        if (days == null) return '';
+        if (days < 0)  return '<span class="cert-status err">EXPIRED ' + Math.abs(days) + 'd ago</span>';
+        if (days < 30) return '<span class="cert-status warn">expires in ' + days + 'd</span>';
+        return '<span class="cert-status ok">expires in ' + days + 'd</span>';
+    }
+    function copyBtn(target) {
+        return '<button type="button" class="button-cancel cli-copy" data-target="' + target + '">Copy</button>';
+    }
+    function renderCertCard(c, i, isLeaf) {
+        var id   = 'cert-' + Math.random().toString(36).slice(2, 8) + '-' + i;
+        var role = isLeaf
+            ? 'leaf'
+            : (c.subject === c.issuer_dn || c.subject_cn === c.issuer_cn ? 'root' : 'intermediate');
+        var title = '<span class="cert-role">' + role + '</span> ' +
+                    '<strong>' + esc(c.subject_cn || c.subject || '?') + '</strong>' +
+                    ' <span class="cert-arrow">←</span> ' + esc(c.issuer_cn || '?') +
+                    '   ' + fmtStatus(c.days_left);
+
+        var coreRows = [
+            ['Version',             'X.509 v' + (c.version || '?')],
+            ['Serial (hex)',        c.serial_hex],
+            ['Serial (decimal)',    c.serial_dec],
+            ['Valid from',          c.valid_from],
+            ['Valid to',            c.valid_to],
+            ['Signature algorithm', c.sig_algorithm + (c.sig_algorithm_long && c.sig_algorithm_long !== c.sig_algorithm ? ' (' + c.sig_algorithm_long + ')' : '')],
+            ['Public key',          fmtKey(c)],
+            ['SAN',                 (c.san || []).join(', ')],
+        ];
+
+        var extHtml = '';
+        if (c.extensions && Object.keys(c.extensions).length) {
+            var pairs = '';
+            Object.keys(c.extensions).forEach(function (k) {
+                pairs += '<div class="cert-ext-k">' + esc(k) + '</div><div class="cert-ext-v"><pre>' + esc(String(c.extensions[k])) + '</pre></div>';
+            });
+            extHtml = '<h5>Extensions (' + Object.keys(c.extensions).length + ')</h5><div class="cert-ext">' + pairs + '</div>';
+        }
+
+        var fp = c.fingerprints || {};
+        var fpRows = '';
+        ['sha256', 'sha1', 'md5'].forEach(function (k) {
+            if (fp[k]) fpRows += '<div class="cert-kv-k">' + k.toUpperCase() + '</div><div class="cert-kv-v cert-fp">' + esc(fp[k]) + '</div>';
+        });
+        var fpBlock = fpRows ? '<h5>Fingerprints</h5><div class="cert-kv">' + fpRows + '</div>' : '';
+
+        var pubId = id + '-pubkey';
+        var pemId = id + '-pem';
+        var pubBlock = c.public_key_pem
+            ? '<details class="cert-raw"><summary>Public key (PEM) ' + copyBtn(pubId) + '</summary><pre id="' + pubId + '" class="cert-pem">' + esc(c.public_key_pem) + '</pre></details>'
+            : '';
+        var pemBlock = c.pem
+            ? '<details class="cert-raw"><summary>Certificate (PEM) ' + copyBtn(pemId) + '</summary><pre id="' + pemId + '" class="cert-pem">' + esc(c.pem) + '</pre></details>'
+            : '';
+
+        return '<details class="cert-card"' + (isLeaf ? ' open' : '') + '>' +
+                 '<summary><span class="cert-idx">' + i + '</span> ' + title + '</summary>' +
+                 '<div class="cert-body">' +
+                   '<h5>Subject</h5>' + dnGrid(c.subject_parts) +
+                   '<h5>Issuer</h5>'  + dnGrid(c.issuer_parts) +
+                   '<h5>Details</h5>' + kvGrid(coreRows) +
+                   extHtml +
+                   fpBlock +
+                   pubBlock + pemBlock +
+                 '</div>' +
+               '</details>';
+    }
+    window.phproxyFmtCertHtml = function (j) {
+        var N = j.negotiated || {};
+        var probe = '';
+        if (j.tls_versions && j.tls_versions.length) {
+            probe = '<table class="tls-probes">';
+            j.tls_versions.forEach(function (v) {
+                if (v.supported) {
+                    probe += '<tr class="ok"><td class="ver">' + esc(v.version) + '</td><td>✓</td>' +
+                             '<td>' + esc(v.cipher_name || '') + '</td>' +
+                             '<td>' + (v.cipher_bits ? v.cipher_bits + '-bit' : '') + '</td>' +
+                             '<td>' + (v.latency_ms || 0) + ' ms</td></tr>';
+                } else {
+                    probe += '<tr class="err"><td class="ver">' + esc(v.version) + '</td><td>✗</td>' +
+                             '<td colspan="3">' + esc(v.error || 'unsupported') + '</td></tr>';
+                }
+            });
+            probe += '</table>';
+        }
+        var top =
+            '<div class="cert-top">' +
+              '<div class="cert-top-line"><strong>' + esc(j.host) + ':' + j.port + '</strong>' +
+                ' <span class="cert-time">' + (j.duration_ms || 0) + ' ms</span></div>' +
+              '<div class="cert-top-neg">negotiated&nbsp;&nbsp;' +
+                '<strong>' + esc(N.protocol || '?') + '</strong>&nbsp;&nbsp;' +
+                esc(N.cipher_name || '?') +
+                (N.cipher_bits ? '&nbsp;&nbsp;(' + N.cipher_bits + '-bit)' : '') +
+              '</div>' +
+              probe +
+            '</div>';
+        var chain = '<h4 class="cert-chain-title">Certificate chain (' + (j.chain_length || (j.chain || []).length) + ')</h4>';
+        (j.chain || [j.leaf]).forEach(function (c, i) { chain += renderCertCard(c, i, i === 0); });
+        return top + chain;
+    };
+
+    // Reusable copy-button wiring for any container that has just been
+    // populated with .cli-copy buttons (e.g. cert PEM blocks).
+    window.phproxyBindCertCopy = function (container) {
+        container.querySelectorAll('.cli-copy').forEach(function (btn) {
+            if (btn.dataset.bound) return;
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', function (ev) {
+                ev.preventDefault();
+                ev.stopPropagation();
+                var t = document.getElementById(btn.dataset.target);
+                if (!t) return;
+                var done = function () { var o = btn.textContent; btn.textContent = 'Copied!'; setTimeout(function () { btn.textContent = o; }, 1500); };
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(t.textContent).then(done, done);
+                } else {
+                    var ta = document.createElement('textarea');
+                    ta.value = t.textContent;
+                    document.body.appendChild(ta);
+                    ta.select();
+                    try { document.execCommand('copy'); done(); } catch (e) {}
+                    document.body.removeChild(ta);
+                }
+            });
+        });
+    };
+})();
+PHPROXY_NETCHECK_JS;
+}
+
 function phproxy_index_css(): string {
     return <<<'PHPROXY_INDEX_CSS'
 :root {
@@ -5836,6 +6012,190 @@ p.info { background: var(--success-soft); color: var(--text); border-left: 3px s
 .netcheck-result.warn  { border-color: var(--warning); background: var(--warning-soft); }
 .netcheck-result.busy  { color: var(--text-muted); font-style: italic; }
 
+/* Cert-result variant uses a <div> instead of <pre> so it can hold a rich
+   structured layout with collapsible cert cards. */
+.netcheck-result.cert-result {
+    font-family: var(--font);
+    font-size: 13px;
+    white-space: normal;
+    padding: 0;
+    background: transparent;
+    border: none;
+    max-height: 600px;
+}
+.cert-top {
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    margin-bottom: 12px;
+}
+.cert-top-line {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    margin-bottom: 4px;
+}
+.cert-top-line .cert-time { color: var(--text-muted); font-size: 12px; }
+.cert-top-neg {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    margin-bottom: 8px;
+    color: var(--text);
+}
+.tls-probes {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+}
+.tls-probes td {
+    padding: 3px 8px;
+    border-top: 1px solid var(--border);
+}
+.tls-probes tr:first-child td { border-top: none; }
+.tls-probes .ver { font-weight: 600; width: 70px; }
+.tls-probes .ok td { color: var(--text); }
+.tls-probes .err td { color: var(--text-muted); }
+.tls-probes .ok td:nth-child(2) { color: var(--success); font-weight: 700; }
+.tls-probes .err td:nth-child(2) { color: var(--danger);  font-weight: 700; }
+
+.cert-chain-title {
+    margin: 16px 0 8px;
+    font: 600 13px var(--font);
+    color: var(--text-muted);
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+.cert-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin-bottom: 8px;
+    background: var(--surface);
+    overflow: hidden;
+}
+.cert-card > summary {
+    padding: 10px 14px;
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text);
+}
+.cert-card > summary::-webkit-details-marker { display: none; }
+.cert-card > summary::before {
+    content: '▸';
+    color: var(--text-muted);
+    transition: transform .15s;
+    display: inline-block;
+}
+.cert-card[open] > summary::before { transform: rotate(90deg); }
+.cert-card[open] > summary { border-bottom: 1px solid var(--border); background: var(--surface-2); }
+.cert-idx {
+    display: inline-block;
+    min-width: 22px;
+    padding: 1px 6px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-radius: 4px;
+    font: 600 11px var(--font-mono);
+    text-align: center;
+}
+.cert-role {
+    display: inline-block;
+    padding: 1px 6px;
+    background: var(--surface-2);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font: 600 10px var(--font);
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+.cert-arrow { color: var(--text-muted); margin: 0 4px; }
+.cert-status { font: 600 11px var(--font); margin-left: auto; padding: 1px 8px; border-radius: 999px; }
+.cert-status.ok   { background: var(--success-soft); color: var(--success); }
+.cert-status.warn { background: var(--warning-soft); color: var(--warning); }
+.cert-status.err  { background: var(--danger-soft);  color: var(--danger);  }
+.cert-body { padding: 12px 14px; }
+.cert-body h5 {
+    margin: 12px 0 6px;
+    font: 600 11px var(--font);
+    color: var(--text-muted);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+.cert-body h5:first-child { margin-top: 0; }
+.cert-kv {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    gap: 3px 12px;
+    font-size: 12.5px;
+}
+.cert-kv-k { color: var(--text-muted); font-family: var(--font-mono); }
+.cert-kv-v { color: var(--text); font-family: var(--font-mono); word-break: break-all; }
+.cert-fp { font-size: 11.5px; letter-spacing: 0; }
+.cert-ext {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 4px 12px;
+    font-size: 12.5px;
+}
+.cert-ext-k {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding-top: 4px;
+}
+.cert-ext-v pre {
+    margin: 0;
+    padding: 6px 10px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font: 11.5px/1.5 var(--font-mono);
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-all;
+    overflow-x: auto;
+}
+.cert-raw {
+    margin-top: 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--surface-2);
+}
+.cert-raw > summary {
+    padding: 8px 12px;
+    cursor: pointer;
+    font: 600 11px var(--font);
+    color: var(--text-muted);
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.cert-raw > summary::-webkit-details-marker { display: none; }
+.cert-raw .button-cancel { padding: 4px 10px; font-size: 11px; margin-left: 8px; }
+.cert-pem {
+    margin: 0;
+    padding: 10px 12px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    font: 11.5px/1.5 var(--font-mono);
+    color: var(--text);
+    white-space: pre;
+    overflow-x: auto;
+    max-height: 320px;
+}
+@media (max-width: 600px) {
+    .cert-kv  { grid-template-columns: 1fr; }
+    .cert-kv-k { font-weight: 600; }
+    .cert-ext { grid-template-columns: 1fr; }
+}
+
 /* IP tab — identity cards (client / server / outgoing) + request/host info */
 .ipinfo-wrap {
     display: grid;
@@ -6564,6 +6924,69 @@ function phproxy_panel_css(): string {
 @media (max-width: 720px) {
     #phproxy-panel .ipinfo-wrap { grid-template-columns: 1fr; }
     #phproxy-panel .ipinfo-grid { grid-template-columns: 120px 1fr; }
+}
+
+/* Cert-result variant — collapsible cert cards (panel-scoped mirror) */
+#phproxy-panel .netcheck-result.cert-result {
+    font-family: var(--font);
+    font-size: 13px;
+    white-space: normal;
+    padding: 0;
+    background: transparent;
+    border: none;
+    max-height: 600px;
+}
+#phproxy-panel .cert-top {
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    margin-bottom: 12px;
+}
+#phproxy-panel .cert-top-line { font-family: var(--font-mono); font-size: 14px; margin-bottom: 4px; }
+#phproxy-panel .cert-top-line .cert-time { color: var(--text-muted); font-size: 12px; }
+#phproxy-panel .cert-top-neg { font-family: var(--font-mono); font-size: 13px; margin-bottom: 8px; color: var(--text); }
+#phproxy-panel .tls-probes { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 12.5px; }
+#phproxy-panel .tls-probes td { padding: 3px 8px; border-top: 1px solid var(--border); }
+#phproxy-panel .tls-probes tr:first-child td { border-top: none; }
+#phproxy-panel .tls-probes .ver { font-weight: 600; width: 70px; }
+#phproxy-panel .tls-probes .ok td  { color: var(--text); }
+#phproxy-panel .tls-probes .err td { color: var(--text-muted); }
+#phproxy-panel .tls-probes .ok td:nth-child(2)  { color: var(--success); font-weight: 700; }
+#phproxy-panel .tls-probes .err td:nth-child(2) { color: var(--danger);  font-weight: 700; }
+#phproxy-panel .cert-chain-title { margin: 16px 0 8px; font: 600 13px var(--font); color: var(--text-muted); letter-spacing: .04em; text-transform: uppercase; }
+#phproxy-panel .cert-card { border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 8px; background: var(--surface); overflow: hidden; }
+#phproxy-panel .cert-card > summary { padding: 10px 14px; list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); }
+#phproxy-panel .cert-card > summary::-webkit-details-marker { display: none; }
+#phproxy-panel .cert-card > summary::before { content: '▸'; color: var(--text-muted); transition: transform .15s; display: inline-block; }
+#phproxy-panel .cert-card[open] > summary::before { transform: rotate(90deg); }
+#phproxy-panel .cert-card[open] > summary { border-bottom: 1px solid var(--border); background: var(--surface-2); }
+#phproxy-panel .cert-idx { display: inline-block; min-width: 22px; padding: 1px 6px; background: var(--accent-soft); color: var(--accent); border-radius: 4px; font: 600 11px var(--font-mono); text-align: center; }
+#phproxy-panel .cert-role { display: inline-block; padding: 1px 6px; background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--border); border-radius: 999px; font: 600 10px var(--font); letter-spacing: .04em; text-transform: uppercase; }
+#phproxy-panel .cert-arrow { color: var(--text-muted); margin: 0 4px; }
+#phproxy-panel .cert-status { font: 600 11px var(--font); margin-left: auto; padding: 1px 8px; border-radius: 999px; }
+#phproxy-panel .cert-status.ok   { background: var(--success-soft); color: var(--success); }
+#phproxy-panel .cert-status.warn { background: var(--warning-soft); color: var(--warning); }
+#phproxy-panel .cert-status.err  { background: var(--danger-soft);  color: var(--danger);  }
+#phproxy-panel .cert-body { padding: 12px 14px; }
+#phproxy-panel .cert-body h5 { margin: 12px 0 6px; font: 600 11px var(--font); color: var(--text-muted); letter-spacing: .06em; text-transform: uppercase; }
+#phproxy-panel .cert-body h5:first-child { margin-top: 0; }
+#phproxy-panel .cert-kv { display: grid; grid-template-columns: 160px 1fr; gap: 3px 12px; font-size: 12.5px; }
+#phproxy-panel .cert-kv-k { color: var(--text-muted); font-family: var(--font-mono); }
+#phproxy-panel .cert-kv-v { color: var(--text); font-family: var(--font-mono); word-break: break-all; }
+#phproxy-panel .cert-fp { font-size: 11.5px; letter-spacing: 0; }
+#phproxy-panel .cert-ext { display: grid; grid-template-columns: 200px 1fr; gap: 4px 12px; font-size: 12.5px; }
+#phproxy-panel .cert-ext-k { color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; padding-top: 4px; }
+#phproxy-panel .cert-ext-v pre { margin: 0; padding: 6px 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; font: 11.5px/1.5 var(--font-mono); color: var(--text); white-space: pre-wrap; word-break: break-all; overflow-x: auto; }
+#phproxy-panel .cert-raw { margin-top: 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); }
+#phproxy-panel .cert-raw > summary { padding: 8px 12px; cursor: pointer; font: 600 11px var(--font); color: var(--text-muted); letter-spacing: .04em; text-transform: uppercase; display: flex; align-items: center; justify-content: space-between; }
+#phproxy-panel .cert-raw > summary::-webkit-details-marker { display: none; }
+#phproxy-panel .cert-raw .button-cancel { padding: 4px 10px; font-size: 11px; margin-left: 8px; }
+#phproxy-panel .cert-pem { margin: 0; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--surface); font: 11.5px/1.5 var(--font-mono); color: var(--text); white-space: pre; overflow-x: auto; max-height: 320px; }
+@media (max-width: 600px) {
+    #phproxy-panel .cert-kv  { grid-template-columns: 1fr; }
+    #phproxy-panel .cert-kv-k { font-weight: 600; }
+    #phproxy-panel .cert-ext { grid-template-columns: 1fr; }
 }
 
 /* CLI tab — sub-tabs for curl / PHP / Python / JS / Go */
