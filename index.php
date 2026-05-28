@@ -2842,7 +2842,7 @@ $_current_ua      = isset($_COOKIE['userAgent']) ? $_COOKIE['userAgent'] : '';
 $_ua_presets      = phproxy_ua_presets();
 
 $_active_tab = isset($_GET['tab']) ? (string) $_GET['tab'] : 'options';
-$_valid_tabs = ['options' => 1, 'cookies' => 1, 'headers' => 1, 'tools' => 1];
+$_valid_tabs = ['options' => 1, 'cookies' => 1, 'headers' => 1, 'port' => 1, 'dns' => 1, 'cert' => 1, 'cli' => 1];
 if (!isset($_valid_tabs[$_active_tab])) $_active_tab = 'options';
 ?>
 
@@ -3183,13 +3183,13 @@ $_ua_presets_local = $GLOBALS['_ua_presets'] ?? [];
     <input type="radio" name="tab" id="tab-options"<?php echo $_panel_active_tab === 'options' ? ' checked' : ''; ?>/>
     <input type="radio" name="tab" id="tab-cookies"<?php echo $_panel_active_tab === 'cookies' ? ' checked' : ''; ?>/>
     <input type="radio" name="tab" id="tab-headers"<?php echo $_panel_active_tab === 'headers' ? ' checked' : ''; ?>/>
-    <input type="radio" name="tab" id="tab-tools"<?php echo $_panel_active_tab === 'tools' ? ' checked' : ''; ?>/>
+    <input type="radio" name="tab" id="tab-port"<?php echo $_panel_active_tab === 'port' ? ' checked' : ''; ?>/>
+    <input type="radio" name="tab" id="tab-dns"<?php echo $_panel_active_tab === 'dns' ? ' checked' : ''; ?>/>
+    <input type="radio" name="tab" id="tab-cert"<?php echo $_panel_active_tab === 'cert' ? ' checked' : ''; ?>/>
     <?php if ($_panel_show_response): ?>
     <input type="radio" name="tab" id="tab-response"<?php echo $_panel_active_tab === 'response' ? ' checked' : ''; ?>/>
     <?php endif; ?>
-    <?php if ($_panel_show_cli): ?>
     <input type="radio" name="tab" id="tab-cli"<?php echo $_panel_active_tab === 'cli' ? ' checked' : ''; ?>/>
-    <?php endif; ?>
     <?php if ($_panel_show_network): ?>
     <input type="radio" name="tab" id="tab-network"<?php echo $_panel_active_tab === 'network' ? ' checked' : ''; ?>/>
     <?php endif; ?>
@@ -3198,13 +3198,13 @@ $_ua_presets_local = $GLOBALS['_ua_presets'] ?? [];
         <label for="tab-options">Options</label>
         <label for="tab-cookies">Cookies <span class="tab-count"><?php echo count($_v_cookies); ?></span></label>
         <label for="tab-headers">Headers <span class="tab-count"><?php echo count($_c_headers); ?></span></label>
-        <label for="tab-tools">Tools</label>
+        <label for="tab-port">Port</label>
+        <label for="tab-dns">DNS</label>
+        <label for="tab-cert">SSL</label>
         <?php if ($_panel_show_response): ?>
         <label for="tab-response">Trace <span class="tab-count"><?php echo count($_panel_request_pairs) + count($_panel_response_pairs); ?></span></label>
         <?php endif; ?>
-        <?php if ($_panel_show_cli): ?>
         <label for="tab-cli">CLI</label>
-        <?php endif; ?>
         <?php if ($_panel_show_network): ?>
         <label for="tab-network">Network <span class="tab-count"><?php echo count($_panel_network); ?></span></label>
         <?php endif; ?>
@@ -3438,51 +3438,51 @@ foreach ($_v_cookies as $_wire => $_c):
         </form>
     </section>
 
-    <section class="tab-panel" data-tab="tools">
-        <p class="tab-help">Quick network checks for any host the server can reach. All three calls share the proxy's SSRF blocklist (loopback, RFC1918, link-local).</p>
-        <div class="netcheck-row">
-            <form class="card netcheck" data-netcheck="portcheck" autocomplete="off">
-                <div class="netcheck-title">Port Check</div>
-                <div class="netcheck-sub">TCP reachability + latency</div>
-                <div class="netcheck-fields">
-                    <input type="text" name="host" placeholder="host.example.com" required spellcheck="false" autocapitalize="off"/>
-                    <input type="number" name="port" placeholder="443" min="1" max="65535" required/>
-                </div>
-                <button class="button-submit" type="submit">Check</button>
-                <pre class="netcheck-result" hidden></pre>
-            </form>
-            <form class="card netcheck" data-netcheck="dns" autocomplete="off">
-                <div class="netcheck-title">DNS Check</div>
-                <div class="netcheck-sub">Resolve A / AAAA / MX / TXT / NS / CAA / …</div>
-                <div class="netcheck-fields">
-                    <input type="text" name="host" placeholder="example.com" required spellcheck="false" autocapitalize="off"/>
-                    <select name="type">
-                        <option value="A">A</option>
-                        <option value="AAAA">AAAA</option>
-                        <option value="MX">MX</option>
-                        <option value="TXT">TXT</option>
-                        <option value="NS">NS</option>
-                        <option value="SOA">SOA</option>
-                        <option value="CAA">CAA</option>
-                        <option value="CNAME">CNAME</option>
-                        <option value="SRV">SRV</option>
-                        <option value="ANY">ANY</option>
-                    </select>
-                </div>
-                <button class="button-submit" type="submit">Lookup</button>
-                <pre class="netcheck-result" hidden></pre>
-            </form>
-            <form class="card netcheck" data-netcheck="cert" autocomplete="off">
-                <div class="netcheck-title">SSL Check</div>
-                <div class="netcheck-sub">Inspect leaf certificate + chain</div>
-                <div class="netcheck-fields">
-                    <input type="text" name="host" placeholder="example.com" required spellcheck="false" autocapitalize="off"/>
-                    <input type="number" name="port" placeholder="443" min="1" max="65535" value="443" required/>
-                </div>
-                <button class="button-submit" type="submit">Inspect</button>
-                <pre class="netcheck-result" hidden></pre>
-            </form>
-        </div>
+    <section class="tab-panel" data-tab="port">
+        <p class="tab-help">Test TCP reachability and measure connection latency for any host the server can reach. Loopback and RFC1918 hosts are blocked.</p>
+        <form class="netcheck netcheck-solo" data-netcheck="portcheck" autocomplete="off">
+            <div class="netcheck-fields">
+                <input type="text" name="host" placeholder="host.example.com" required spellcheck="false" autocapitalize="off"/>
+                <input type="number" name="port" placeholder="443" min="1" max="65535" required/>
+            </div>
+            <button class="button-submit" type="submit">Check port</button>
+            <pre class="netcheck-result" hidden></pre>
+        </form>
+    </section>
+
+    <section class="tab-panel" data-tab="dns">
+        <p class="tab-help">Resolve DNS records via the server's resolver. A / AAAA / MX / TXT / NS / SOA / CAA / CNAME / SRV / ANY supported.</p>
+        <form class="netcheck netcheck-solo" data-netcheck="dns" autocomplete="off">
+            <div class="netcheck-fields">
+                <input type="text" name="host" placeholder="example.com" required spellcheck="false" autocapitalize="off"/>
+                <select name="type">
+                    <option value="A">A</option>
+                    <option value="AAAA">AAAA</option>
+                    <option value="MX">MX</option>
+                    <option value="TXT">TXT</option>
+                    <option value="NS">NS</option>
+                    <option value="SOA">SOA</option>
+                    <option value="CAA">CAA</option>
+                    <option value="CNAME">CNAME</option>
+                    <option value="SRV">SRV</option>
+                    <option value="ANY">ANY</option>
+                </select>
+            </div>
+            <button class="button-submit" type="submit">Lookup</button>
+            <pre class="netcheck-result" hidden></pre>
+        </form>
+    </section>
+
+    <section class="tab-panel" data-tab="cert">
+        <p class="tab-help">Open an SSL/TLS handshake and inspect the leaf certificate plus the full chain — CN, issuer, SAN, signature algorithm, expiry countdown.</p>
+        <form class="netcheck netcheck-solo" data-netcheck="cert" autocomplete="off">
+            <div class="netcheck-fields">
+                <input type="text" name="host" placeholder="example.com" required spellcheck="false" autocapitalize="off"/>
+                <input type="number" name="port" placeholder="443" min="1" max="65535" value="443" required/>
+            </div>
+            <button class="button-submit" type="submit">Inspect cert</button>
+            <pre class="netcheck-result" hidden></pre>
+        </form>
     </section>
 
     <?php if ($_panel_show_response): ?>
@@ -3535,38 +3535,42 @@ foreach ($_v_cookies as $_wire => $_c):
     </section>
     <?php endif; ?>
 
-    <?php if ($_panel_show_cli):
+    <?php
+        $_cli_has_url = $_panel_show_cli && $_panel_cli_url !== '';
+        // Base URL for the check examples — the proxy's own URL, without
+        // the ?api=fetch suffix. Falls back to $_script_url for the entry page.
+        $_cli_base = $_panel_cli_api_url !== ''
+            ? (string) preg_replace('/\?.*$/', '', $_panel_cli_api_url)
+            : (string) ($GLOBALS['_script_url'] ?? '');
         $_cli_snippets = [
-            'curl'   => [
-                'label'  => 'curl',
-                'direct' => phproxy_cli_curl_direct($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body),
-                'proxy'  => phproxy_cli_curl_proxy($_panel_cli_api_url, $_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, [], $_panel_cli_body),
-            ],
-            'php'    => [
-                'label'  => 'PHP',
-                'direct' => phproxy_cli_php_direct($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body),
-                'proxy'  => phproxy_cli_php_proxy($_panel_cli_api_url, $_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, [], $_panel_cli_body),
-            ],
-            'python' => [
-                'label'  => 'Python',
-                'direct' => phproxy_cli_python_direct($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body),
-                'proxy'  => phproxy_cli_python_proxy($_panel_cli_api_url, $_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, [], $_panel_cli_body),
-            ],
-            'js'     => [
-                'label'  => 'JavaScript',
-                'direct' => phproxy_cli_js_direct($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body),
-                'proxy'  => phproxy_cli_js_proxy($_panel_cli_api_url, $_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, [], $_panel_cli_body),
-            ],
-            'go'     => [
-                'label'  => 'Go',
-                'direct' => phproxy_cli_go_direct($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body),
-                'proxy'  => phproxy_cli_go_proxy($_panel_cli_api_url, $_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, [], $_panel_cli_body),
-            ],
+            'curl'   => ['label' => 'curl',       'checks' => phproxy_cli_checks_curl($_cli_base)],
+            'php'    => ['label' => 'PHP',        'checks' => phproxy_cli_checks_php($_cli_base)],
+            'python' => ['label' => 'Python',     'checks' => phproxy_cli_checks_python($_cli_base)],
+            'js'     => ['label' => 'JavaScript', 'checks' => phproxy_cli_checks_js($_cli_base)],
+            'go'     => ['label' => 'Go',         'checks' => phproxy_cli_checks_go($_cli_base)],
         ];
+        if ($_cli_has_url) {
+            $_cli_snippets['curl']['direct']   = phproxy_cli_curl_direct($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body);
+            $_cli_snippets['curl']['proxy']    = phproxy_cli_curl_proxy($_panel_cli_api_url, $_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, [], $_panel_cli_body);
+            $_cli_snippets['php']['direct']    = phproxy_cli_php_direct($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body);
+            $_cli_snippets['php']['proxy']     = phproxy_cli_php_proxy($_panel_cli_api_url, $_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, [], $_panel_cli_body);
+            $_cli_snippets['python']['direct'] = phproxy_cli_python_direct($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body);
+            $_cli_snippets['python']['proxy']  = phproxy_cli_python_proxy($_panel_cli_api_url, $_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, [], $_panel_cli_body);
+            $_cli_snippets['js']['direct']     = phproxy_cli_js_direct($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body);
+            $_cli_snippets['js']['proxy']      = phproxy_cli_js_proxy($_panel_cli_api_url, $_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, [], $_panel_cli_body);
+            $_cli_snippets['go']['direct']     = phproxy_cli_go_direct($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body);
+            $_cli_snippets['go']['proxy']      = phproxy_cli_go_proxy($_panel_cli_api_url, $_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, [], $_panel_cli_body);
+        }
         $_cli_first = true;
     ?>
     <section class="tab-panel" data-tab="cli">
-        <p class="tab-help">Reproduce this request from the command line. <strong>Direct</strong> hits the upstream target without involving PHProxy; <strong>Via PHProxy</strong> POSTs to the JSON API and gets the response back through the proxy.</p>
+        <p class="tab-help">
+            <?php if ($_cli_has_url): ?>
+            Reproduce this request from the command line. <strong>Direct</strong> hits the upstream target without involving PHProxy; <strong>Via PHProxy</strong> POSTs to the JSON API. <strong>Port / DNS / SSL</strong> below show how to drive the network-check endpoints from each language.
+            <?php else: ?>
+            Drive the proxy's HTTP <code>?api=fetch</code> endpoint and the three network checks (<strong>Port</strong>, <strong>DNS</strong>, <strong>SSL</strong>) from the command line. Open a proxied page to also get a copy-pasteable snippet pre-filled with that specific URL.
+            <?php endif; ?>
+        </p>
         <div class="cli-wrap">
 <?php foreach ($_cli_snippets as $_cli_key => $_cli_meta): ?>
             <input type="radio" name="cli-tab" id="cli-tab-<?php echo $_cli_key; ?>"<?php echo $_cli_first ? ' checked' : ''; $_cli_first = false; ?>/>
@@ -3578,6 +3582,7 @@ foreach ($_v_cookies as $_wire => $_c):
             </nav>
 <?php foreach ($_cli_snippets as $_cli_key => $_cli_meta): ?>
             <section class="cli-panel" data-cli="<?php echo $_cli_key; ?>">
+<?php if ($_cli_has_url): ?>
                 <div class="cli-variant">
                     <div class="cli-toolbar">
                         <span class="cli-variant-label">Direct to upstream</span>
@@ -3592,11 +3597,18 @@ foreach ($_v_cookies as $_wire => $_c):
                     </div>
                     <pre id="cli-snippet-<?php echo $_cli_key; ?>-proxy" class="cli-snippet"><?php echo htmlspecialchars($_cli_meta['proxy']); ?></pre>
                 </div>
+<?php endif; ?>
+                <div class="cli-variant">
+                    <div class="cli-toolbar">
+                        <span class="cli-variant-label">Port / DNS / SSL checks</span>
+                        <button type="button" class="button-cancel cli-copy" data-target="cli-snippet-<?php echo $_cli_key; ?>-checks">Copy</button>
+                    </div>
+                    <pre id="cli-snippet-<?php echo $_cli_key; ?>-checks" class="cli-snippet"><?php echo htmlspecialchars($_cli_meta['checks']); ?></pre>
+                </div>
             </section>
 <?php endforeach; ?>
         </div>
     </section>
-    <?php endif; ?>
 
     <?php if ($_panel_show_network): ?>
     <section class="tab-panel" data-tab="network">
@@ -4056,6 +4068,95 @@ function phproxy_cli_go_proxy(string $api_url, string $upstream, string $method,
     $out .= "    var envelope struct{ Status int `json:\"status\"`; Body string `json:\"body\"` }\n";
     $out .= "    json.NewDecoder(resp.Body).Decode(&envelope)\n";
     $out .= "    fmt.Println(envelope.Status, envelope.Body)\n";
+    $out .= "}";
+    return $out;
+}
+
+/**
+ * CLI snippet helpers for the network-check endpoints. Each returns a
+ * single multi-block string with examples for portcheck / dns / cert.
+ * $base must be the proxy's scheme+host+path (e.g. https://proxy/index.php).
+ */
+function phproxy_cli_checks_curl(string $base): string
+{
+    $u_port = $base . '?api=portcheck&host=example.com&port=443';
+    $u_dns  = $base . '?api=dns&host=example.com&type=A';
+    $u_cert = $base . '?api=cert&host=example.com&port=443';
+    return "# Port check — TCP reach + latency\n"
+         . 'curl ' . phproxy_snip_shell($u_port) . "\n\n"
+         . "# DNS lookup — A / AAAA / MX / TXT / NS / SOA / CAA / CNAME / SRV / ANY\n"
+         . 'curl ' . phproxy_snip_shell($u_dns) . "\n\n"
+         . "# SSL handshake + cert chain inspection\n"
+         . 'curl ' . phproxy_snip_shell($u_cert);
+}
+
+function phproxy_cli_checks_php(string $base): string
+{
+    $out  = "<?php\n";
+    $out .= '$base = ' . phproxy_snip_php($base) . ";\n\n";
+    $out .= "// Port check\n";
+    $out .= "\$port = json_decode(file_get_contents(\$base . '?api=portcheck&host=example.com&port=443'), true);\n";
+    $out .= "print_r(\$port);\n\n";
+    $out .= "// DNS lookup\n";
+    $out .= "\$dns = json_decode(file_get_contents(\$base . '?api=dns&host=example.com&type=A'), true);\n";
+    $out .= "print_r(\$dns);\n\n";
+    $out .= "// SSL cert inspect\n";
+    $out .= "\$cert = json_decode(file_get_contents(\$base . '?api=cert&host=example.com&port=443'), true);\n";
+    $out .= "print_r(\$cert);";
+    return $out;
+}
+
+function phproxy_cli_checks_python(string $base): string
+{
+    $out  = "import json, requests\n\n";
+    $out .= 'base = ' . phproxy_snip_php($base) . "\n\n";
+    $out .= "# Port check\n";
+    $out .= "print(json.dumps(requests.get(base, params={'api': 'portcheck', 'host': 'example.com', 'port': 443}).json(), indent=2))\n\n";
+    $out .= "# DNS lookup\n";
+    $out .= "print(json.dumps(requests.get(base, params={'api': 'dns', 'host': 'example.com', 'type': 'A'}).json(), indent=2))\n\n";
+    $out .= "# SSL cert inspect\n";
+    $out .= "print(json.dumps(requests.get(base, params={'api': 'cert', 'host': 'example.com', 'port': 443}).json(), indent=2))";
+    return $out;
+}
+
+function phproxy_cli_checks_js(string $base): string
+{
+    $b = phproxy_snip_php($base);
+    return "const base = $b;\n\n"
+         . "// Port check\n"
+         . "const port = await fetch(base + '?api=portcheck&host=example.com&port=443').then(r => r.json());\n"
+         . "console.log(port);\n\n"
+         . "// DNS lookup\n"
+         . "const dns = await fetch(base + '?api=dns&host=example.com&type=A').then(r => r.json());\n"
+         . "console.log(dns);\n\n"
+         . "// SSL cert inspect\n"
+         . "const cert = await fetch(base + '?api=cert&host=example.com&port=443').then(r => r.json());\n"
+         . "console.log(cert);";
+}
+
+function phproxy_cli_checks_go(string $base): string
+{
+    $b = phproxy_snip_go($base);
+    $out  = "package main\n\n";
+    $out .= "import (\n";
+    $out .= "    \"encoding/json\"\n";
+    $out .= "    \"fmt\"\n";
+    $out .= "    \"io\"\n";
+    $out .= "    \"net/http\"\n";
+    $out .= ")\n\n";
+    $out .= "func get(url string) map[string]any {\n";
+    $out .= "    r, _ := http.Get(url)\n";
+    $out .= "    defer r.Body.Close()\n";
+    $out .= "    b, _ := io.ReadAll(r.Body)\n";
+    $out .= "    var m map[string]any\n";
+    $out .= "    json.Unmarshal(b, &m)\n";
+    $out .= "    return m\n";
+    $out .= "}\n\n";
+    $out .= "func main() {\n";
+    $out .= '    base := ' . $b . "\n";
+    $out .= "    fmt.Println(get(base + \"?api=portcheck&host=example.com&port=443\"))\n";
+    $out .= "    fmt.Println(get(base + \"?api=dns&host=example.com&type=A\"))\n";
+    $out .= "    fmt.Println(get(base + \"?api=cert&host=example.com&port=443\"))\n";
     $out .= "}";
     return $out;
 }
@@ -4617,6 +4718,7 @@ p.info { background: var(--success-soft); color: var(--text); border-left: 3px s
 
 .tabs {
     display: flex;
+    flex-wrap: wrap;
     gap: 4px;
     border-bottom: 1px solid var(--border);
     margin-bottom: 16px;
@@ -4638,7 +4740,10 @@ p.info { background: var(--success-soft); color: var(--text); border-left: 3px s
 #tab-options:checked  ~ .tabs label[for="tab-options"],
 #tab-cookies:checked  ~ .tabs label[for="tab-cookies"],
 #tab-headers:checked  ~ .tabs label[for="tab-headers"],
-#tab-tools:checked    ~ .tabs label[for="tab-tools"],
+#tab-port:checked     ~ .tabs label[for="tab-port"],
+#tab-dns:checked      ~ .tabs label[for="tab-dns"],
+#tab-cert:checked     ~ .tabs label[for="tab-cert"],
+#tab-cli:checked      ~ .tabs label[for="tab-cli"],
 #tab-response:checked ~ .tabs label[for="tab-response"] {
     color: var(--accent);
     border-bottom-color: var(--accent);
@@ -4649,7 +4754,10 @@ p.info { background: var(--success-soft); color: var(--text); border-left: 3px s
 #tab-options:checked  ~ .tab-panel[data-tab="options"],
 #tab-cookies:checked  ~ .tab-panel[data-tab="cookies"],
 #tab-headers:checked  ~ .tab-panel[data-tab="headers"],
-#tab-tools:checked    ~ .tab-panel[data-tab="tools"],
+#tab-port:checked     ~ .tab-panel[data-tab="port"],
+#tab-dns:checked      ~ .tab-panel[data-tab="dns"],
+#tab-cert:checked     ~ .tab-panel[data-tab="cert"],
+#tab-cli:checked      ~ .tab-panel[data-tab="cli"],
 #tab-response:checked ~ .tab-panel[data-tab="response"] {
     display: block;
 }
@@ -5033,54 +5141,34 @@ p.info { background: var(--success-soft); color: var(--text); border-left: 3px s
 
 .ua-picker select { padding: 9px 12px; }
 
-.netcheck-row {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px;
-    margin-bottom: 16px;
-}
-
-.netcheck.card {
-    margin-bottom: 0;
-    padding: 14px 16px;
+.netcheck {
     display: flex;
     flex-direction: column;
 }
 
-.netcheck-title {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--text);
-    margin-bottom: 2px;
-}
-
-.netcheck-sub {
-    font-size: 12px;
-    color: var(--text-muted);
-    margin-bottom: 10px;
-}
+.netcheck-solo .netcheck-fields { grid-template-columns: 1fr 140px; }
 
 .netcheck-fields {
     display: grid;
-    grid-template-columns: 1fr 90px;
-    gap: 6px;
-    margin-bottom: 8px;
+    grid-template-columns: 1fr 140px;
+    gap: 8px;
+    margin-bottom: 10px;
 }
 
 .netcheck[data-netcheck="dns"] .netcheck-fields {
-    grid-template-columns: 1fr 110px;
+    grid-template-columns: 1fr 140px;
 }
 
 .netcheck-fields input,
 .netcheck-fields select {
-    padding: 8px 10px;
-    font-size: 13px;
+    padding: 10px 12px;
+    font-size: 14px;
 }
 
 .netcheck .button-submit {
-    width: 100%;
-    padding: 8px 10px;
-    font-size: 13px;
+    padding: 10px 14px;
+    font-size: 14px;
+    align-self: flex-start;
 }
 
 .netcheck-result {
@@ -5440,7 +5528,9 @@ function phproxy_panel_css(): string {
 #phproxy-panel #tab-options:checked  ~ .tabs label[for="tab-options"],
 #phproxy-panel #tab-cookies:checked  ~ .tabs label[for="tab-cookies"],
 #phproxy-panel #tab-headers:checked  ~ .tabs label[for="tab-headers"],
-#phproxy-panel #tab-tools:checked    ~ .tabs label[for="tab-tools"],
+#phproxy-panel #tab-port:checked     ~ .tabs label[for="tab-port"],
+#phproxy-panel #tab-dns:checked      ~ .tabs label[for="tab-dns"],
+#phproxy-panel #tab-cert:checked     ~ .tabs label[for="tab-cert"],
 #phproxy-panel #tab-response:checked ~ .tabs label[for="tab-response"],
 #phproxy-panel #tab-cli:checked      ~ .tabs label[for="tab-cli"],
 #phproxy-panel #tab-network:checked  ~ .tabs label[for="tab-network"] {
@@ -5452,7 +5542,9 @@ function phproxy_panel_css(): string {
 #phproxy-panel #tab-options:checked  ~ .tab-panel[data-tab="options"],
 #phproxy-panel #tab-cookies:checked  ~ .tab-panel[data-tab="cookies"],
 #phproxy-panel #tab-headers:checked  ~ .tab-panel[data-tab="headers"],
-#phproxy-panel #tab-tools:checked    ~ .tab-panel[data-tab="tools"],
+#phproxy-panel #tab-port:checked     ~ .tab-panel[data-tab="port"],
+#phproxy-panel #tab-dns:checked      ~ .tab-panel[data-tab="dns"],
+#phproxy-panel #tab-cert:checked     ~ .tab-panel[data-tab="cert"],
 #phproxy-panel #tab-response:checked ~ .tab-panel[data-tab="response"],
 #phproxy-panel #tab-cli:checked      ~ .tab-panel[data-tab="cli"],
 #phproxy-panel #tab-network:checked  ~ .tab-panel[data-tab="network"] {
