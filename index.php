@@ -739,7 +739,7 @@ $_proxify           =
                         'application/xhtml+xml' => 1,
                         'text/css'              => 1,
                     ];
-$_version           = 'v1.3.0';
+$_version           = 'v1.3.1';
 $_http_host         = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : (isset($_SERVER['SERVER_NAME']) ? $_SERVER['SERVER_NAME'] : 'localhost');
 // https://stackoverflow.com/questions/4504831/serverhttp-host-contains-port-number-too
 $pos = strpos($_http_host, ':');
@@ -3048,19 +3048,20 @@ if(preg_match('/facebook\.com[.]?$/', $_url_parts['host']) && $_content_type == 
 #phproxy-bar button.go:hover{background:#1d4ed8;}
 #phproxy-bar[data-theme="dark"] button.go{background:#3b82f6;}
 #phproxy-bar[data-theme="dark"] button.go:hover{background:#60a5fa;}
-#phproxy-bar a.link{color:#2563eb;text-decoration:none;}
-#phproxy-bar a.link:hover{text-decoration:underline;}
-#phproxy-bar[data-theme="dark"] a.link{color:#93c5fd;}
-#phproxy-bar label.gear{margin-left:auto;cursor:pointer;padding:6px;color:inherit;border-radius:6px;display:inline-flex;align-items:center;gap:4px;}
-#phproxy-bar label.gear:hover{background:rgba(0,0,0,.06);}
-#phproxy-bar[data-theme="dark"] label.gear:hover{background:rgba(255,255,255,.08);}
-#phproxy-bar label.gear svg{width:16px;height:16px;display:block;stroke:currentColor;fill:none;stroke-width:2;}
+#phproxy-bar .icon{cursor:pointer;padding:6px;color:inherit;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;}
+#phproxy-bar .icon:hover{background:rgba(0,0,0,.06);}
+#phproxy-bar[data-theme="dark"] .icon:hover{background:rgba(255,255,255,.08);}
+#phproxy-bar .icon svg{width:16px;height:16px;display:block;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+#phproxy-bar label.gear{margin-left:auto;}
 #phproxy-panel-toggle{position:absolute !important;left:-9999px !important;width:0 !important;height:0 !important;opacity:0 !important;pointer-events:none !important;}
 CSS;
 
         $_gear = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 0 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 0 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h0a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 0 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v0a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>';
+        $_home_icon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v10h14V10"/></svg>';
 
-        // Build the inline tabs panel via the shared template function
+        // Build the inline tabs panel via the shared template function.
+        // Proxied pages don't need the IP/Port/DNS/SSL tabs — those are
+        // host-level utilities, not per-page. Hide them here.
         ob_start();
         phproxy_render_panel_tabs(
             return_to:           $_current_proxy_url,
@@ -3078,7 +3079,8 @@ CSS;
             cli_api_url:         $_script_url . '?api=fetch',
             show_network:        true,
             network_entries:     $_SESSION['phproxy_network'] ?? [],
-            network_current_url: $_url
+            network_current_url: $_url,
+            show_netchecks:      false
         );
         $_panel_inner_html = ob_get_clean();
 
@@ -3090,10 +3092,10 @@ CSS;
             . '<input type="checkbox" id="phproxy-panel-toggle"' . ($_panel_open ? ' checked' : '') . '/>'
             . '<div id="phproxy-bar">'
             .   '<form class="row" method="post" action="' . $_action_safe . '">'
-            .     '<a class="link" href="' . $_home_safe . '">Home</a>'
+            .     '<a class="icon home" href="' . $_home_safe . '" title="PHProxy home" aria-label="PHProxy home">' . $_home_icon . '</a>'
             .     '<input class="url" id="____' . $_url_var_safe . '" type="text" name="' . $_url_var_safe . '" value="' . $_url_safe . '"/>'
             .     '<button class="go" type="submit" name="go">Go</button>'
-            .     '<label class="gear" for="phproxy-panel-toggle" title="Open settings panel" aria-label="Open settings panel">' . $_gear . '</label>'
+            .     '<label class="icon gear" for="phproxy-panel-toggle" title="Open settings panel" aria-label="Open settings panel">' . $_gear . '</label>'
             .   '</form>'
             . '</div>'
             . '<div id="phproxy-panel" role="dialog" aria-label="PHProxy settings">'
@@ -3734,7 +3736,8 @@ function phproxy_render_panel_tabs(
     string $cli_api_url = '',
     bool $show_network = false,
     array $network_entries = [],
-    string $network_current_url = ''
+    string $network_current_url = '',
+    bool $show_netchecks = true   // IP / Port / DNS / SSL — entry page only
 ): void {
     // Local aliases keep the existing template body unchanged
     $_panel_return_to      = $return_to;
@@ -3753,6 +3756,7 @@ function phproxy_render_panel_tabs(
     $_panel_show_network   = $show_network;
     $_panel_network        = $network_entries;
     $_panel_net_current    = $network_current_url;
+    $_panel_show_netchecks = $show_netchecks;
 
 $_panel_return_html = $_panel_return_to !== ''
     ? '<input type="hidden" name="return_to" value="' . htmlspecialchars($_panel_return_to, ENT_QUOTES) . '"/>'
@@ -3773,10 +3777,12 @@ $_ua_presets_local = $GLOBALS['_ua_presets'] ?? [];
     <input type="radio" name="tab" id="tab-options"<?php echo $_panel_active_tab === 'options' ? ' checked' : ''; ?>/>
     <input type="radio" name="tab" id="tab-cookies"<?php echo $_panel_active_tab === 'cookies' ? ' checked' : ''; ?>/>
     <input type="radio" name="tab" id="tab-headers"<?php echo $_panel_active_tab === 'headers' ? ' checked' : ''; ?>/>
+    <?php if ($_panel_show_netchecks): ?>
     <input type="radio" name="tab" id="tab-ip"<?php echo $_panel_active_tab === 'ip' ? ' checked' : ''; ?>/>
     <input type="radio" name="tab" id="tab-port"<?php echo $_panel_active_tab === 'port' ? ' checked' : ''; ?>/>
     <input type="radio" name="tab" id="tab-dns"<?php echo $_panel_active_tab === 'dns' ? ' checked' : ''; ?>/>
     <input type="radio" name="tab" id="tab-cert"<?php echo $_panel_active_tab === 'cert' ? ' checked' : ''; ?>/>
+    <?php endif; ?>
     <?php if ($_panel_show_response): ?>
     <input type="radio" name="tab" id="tab-response"<?php echo $_panel_active_tab === 'response' ? ' checked' : ''; ?>/>
     <?php endif; ?>
@@ -3789,10 +3795,12 @@ $_ua_presets_local = $GLOBALS['_ua_presets'] ?? [];
         <label for="tab-options">Options</label>
         <label for="tab-cookies">Cookies <span class="tab-count"><?php echo count($_v_cookies); ?></span></label>
         <label for="tab-headers">Headers <span class="tab-count"><?php echo count($_c_headers); ?></span></label>
+        <?php if ($_panel_show_netchecks): ?>
         <label for="tab-ip">IP</label>
         <label for="tab-port">Port</label>
         <label for="tab-dns">DNS</label>
         <label for="tab-cert">SSL</label>
+        <?php endif; ?>
         <?php if ($_panel_show_response): ?>
         <label for="tab-response">Trace <span class="tab-count"><?php echo count($_panel_request_pairs) + count($_panel_response_pairs); ?></span></label>
         <?php endif; ?>
@@ -4030,6 +4038,7 @@ foreach ($_v_cookies as $_wire => $_c):
         </form>
     </section>
 
+    <?php if ($_panel_show_netchecks): ?>
     <section class="tab-panel" data-tab="ip">
         <p class="tab-help">Network identity for the current request. <strong>Client</strong> is who you appear as to this server; <strong>Outgoing</strong> is what the wider internet sees when the server reaches out. All data is collected locally via PHP built-ins — no external lookups, no API keys.</p>
         <div class="ipinfo-wrap" data-ipinfo-target>
@@ -4092,6 +4101,7 @@ foreach ($_v_cookies as $_wire => $_c):
             <div class="netcheck-result cert-result" hidden></div>
         </form>
     </section>
+    <?php endif; ?>
 
     <?php if ($_panel_show_response): ?>
     <section class="tab-panel" data-tab="response">
