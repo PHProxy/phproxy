@@ -2765,6 +2765,39 @@ CSS;
             .       "}"
             .     "});"
             .   "});"
+            .   "var nbase=" . json_encode($_script_base, JSON_UNESCAPED_SLASHES) . ";"
+            .   "document.querySelectorAll('form[data-netcheck]').forEach(function(f){"
+            .     "var kind=f.getAttribute('data-netcheck');"
+            .     "var out=f.querySelector('.netcheck-result');"
+            .     "var btn=f.querySelector('button[type=\"submit\"]');"
+            .     "f.addEventListener('submit',function(ev){"
+            .       "ev.preventDefault();"
+            .       "var fd=new FormData(f),p=new URLSearchParams();p.set('api',kind);"
+            .       "fd.forEach(function(v,k){p.set(k,v);});"
+            .       "out.hidden=false;out.className='netcheck-result busy';out.textContent='Running…';btn.disabled=true;"
+            .       "fetch(nbase+'?'+p.toString(),{headers:{'Accept':'application/json'}})"
+            .         ".then(function(r){return r.json();})"
+            .         ".then(function(j){"
+            .           "if(j.ok===false){out.className='netcheck-result err';out.textContent='ERROR  '+(j.error||'request failed')+(j.host?'\\nhost: '+j.host:'');return;}"
+            .           "if(kind==='portcheck'){out.className='netcheck-result '+(j.reachable?'ok':'warn');out.textContent=(j.reachable?'OPEN  ':'CLOSED  ')+j.host+':'+j.port+'\\nlatency: '+(j.latency_ms||0)+' ms'+(j.error?'\\nerror: '+j.error:'');}"
+            .           "else if(kind==='dns'){"
+            .             "if(!j.records||!j.records.length){out.className='netcheck-result warn';out.textContent='No '+j.type+' records for '+j.host+'  ('+j.duration_ms+' ms)';return;}"
+            .             "var L=[j.host+'  '+j.type+'  '+j.records.length+' record(s)  ('+j.duration_ms+' ms)',''];"
+            .             "j.records.forEach(function(r){var k=r.type||j.type,v=r.ip||r.ipv6||r.target||r.txt||r.value||r.mname||(r.tag?r.tag+' \"'+r.value+'\"':JSON.stringify(r));L.push(k+'  '+v+(r.ttl!=null?'   ttl '+r.ttl:''));});"
+            .             "out.className='netcheck-result ok';out.textContent=L.join('\\n');"
+            .           "}"
+            .           "else if(kind==='cert'){"
+            .             "var x=j.leaf||{},d=x.days_left,st=d<0?'EXPIRED '+Math.abs(d)+'d ago':(d<30?'expires in '+d+'d (warning)':'expires in '+d+'d');"
+            .             "var L=[j.host+':'+j.port+'   ('+(j.duration_ms||0)+' ms)','','subject:    '+(x.subject_cn||'(none)'),'issuer:     '+(x.issuer_cn||'(none)'),'valid:      '+(x.valid_from||'?')+'  →  '+(x.valid_to||'?'),'status:     '+st,'sig algo:   '+(x.sig_algorithm||'?')];"
+            .             "if(x.san&&x.san.length)L.push('SAN:        '+x.san.slice(0,12).join(', '));"
+            .             "if(j.chain_length){L.push('','chain ('+j.chain_length+'):');(j.chain||[]).forEach(function(c,i){L.push('  '+i+'. '+(c.subject_cn||'?')+'   ←  '+(c.issuer_cn||'?'));});}"
+            .             "out.className='netcheck-result '+(d!=null&&d<0?'err':(d!=null&&d<30?'warn':'ok'));out.textContent=L.join('\\n');"
+            .           "}"
+            .         "})"
+            .         ".catch(function(e){out.className='netcheck-result err';out.textContent='Network error: '+(e&&e.message?e.message:e);})"
+            .         ".finally(function(){btn.disabled=false;});"
+            .     "});"
+            .   "});"
             . "})();</script>";
 
         $_response_body = preg_replace('#\<\s*body(.*?)\>#si', "$0\n$_url_form" , $_response_body, 1);
@@ -2809,7 +2842,7 @@ $_current_ua      = isset($_COOKIE['userAgent']) ? $_COOKIE['userAgent'] : '';
 $_ua_presets      = phproxy_ua_presets();
 
 $_active_tab = isset($_GET['tab']) ? (string) $_GET['tab'] : 'options';
-$_valid_tabs = ['options' => 1, 'cookies' => 1, 'headers' => 1];
+$_valid_tabs = ['options' => 1, 'cookies' => 1, 'headers' => 1, 'tools' => 1];
 if (!isset($_valid_tabs[$_active_tab])) $_active_tab = 'options';
 ?>
 
@@ -2846,50 +2879,6 @@ if (!isset($_valid_tabs[$_active_tab])) $_active_tab = 'options';
     </header>
 
 <?php if ($data['category'] != 'auth'): ?>
-    <div class="netcheck-row">
-        <form class="card netcheck" data-netcheck="portcheck" autocomplete="off">
-            <div class="netcheck-title">Port Check</div>
-            <div class="netcheck-sub">TCP reachability + latency</div>
-            <div class="netcheck-fields">
-                <input type="text" name="host" placeholder="host.example.com" required spellcheck="false" autocapitalize="off"/>
-                <input type="number" name="port" placeholder="443" min="1" max="65535" required/>
-            </div>
-            <button class="button-submit" type="submit">Check</button>
-            <pre class="netcheck-result" hidden></pre>
-        </form>
-        <form class="card netcheck" data-netcheck="dns" autocomplete="off">
-            <div class="netcheck-title">DNS Check</div>
-            <div class="netcheck-sub">Resolve A / AAAA / MX / TXT / NS / CAA / …</div>
-            <div class="netcheck-fields">
-                <input type="text" name="host" placeholder="example.com" required spellcheck="false" autocapitalize="off"/>
-                <select name="type">
-                    <option value="A">A</option>
-                    <option value="AAAA">AAAA</option>
-                    <option value="MX">MX</option>
-                    <option value="TXT">TXT</option>
-                    <option value="NS">NS</option>
-                    <option value="SOA">SOA</option>
-                    <option value="CAA">CAA</option>
-                    <option value="CNAME">CNAME</option>
-                    <option value="SRV">SRV</option>
-                    <option value="ANY">ANY</option>
-                </select>
-            </div>
-            <button class="button-submit" type="submit">Lookup</button>
-            <pre class="netcheck-result" hidden></pre>
-        </form>
-        <form class="card netcheck" data-netcheck="cert" autocomplete="off">
-            <div class="netcheck-title">SSL Check</div>
-            <div class="netcheck-sub">Inspect leaf certificate + chain</div>
-            <div class="netcheck-fields">
-                <input type="text" name="host" placeholder="example.com" required spellcheck="false" autocapitalize="off"/>
-                <input type="number" name="port" placeholder="443" min="1" max="65535" value="443" required/>
-            </div>
-            <button class="button-submit" type="submit">Inspect</button>
-            <pre class="netcheck-result" hidden></pre>
-        </form>
-    </div>
-
     <form id="proxy-main-form" method="post" action="<?php echo htmlspecialchars($_SERVER['PHP_SELF']); ?>">
         <div class="card">
             <div class="form-row url-row">
@@ -3194,6 +3183,7 @@ $_ua_presets_local = $GLOBALS['_ua_presets'] ?? [];
     <input type="radio" name="tab" id="tab-options"<?php echo $_panel_active_tab === 'options' ? ' checked' : ''; ?>/>
     <input type="radio" name="tab" id="tab-cookies"<?php echo $_panel_active_tab === 'cookies' ? ' checked' : ''; ?>/>
     <input type="radio" name="tab" id="tab-headers"<?php echo $_panel_active_tab === 'headers' ? ' checked' : ''; ?>/>
+    <input type="radio" name="tab" id="tab-tools"<?php echo $_panel_active_tab === 'tools' ? ' checked' : ''; ?>/>
     <?php if ($_panel_show_response): ?>
     <input type="radio" name="tab" id="tab-response"<?php echo $_panel_active_tab === 'response' ? ' checked' : ''; ?>/>
     <?php endif; ?>
@@ -3208,6 +3198,7 @@ $_ua_presets_local = $GLOBALS['_ua_presets'] ?? [];
         <label for="tab-options">Options</label>
         <label for="tab-cookies">Cookies <span class="tab-count"><?php echo count($_v_cookies); ?></span></label>
         <label for="tab-headers">Headers <span class="tab-count"><?php echo count($_c_headers); ?></span></label>
+        <label for="tab-tools">Tools</label>
         <?php if ($_panel_show_response): ?>
         <label for="tab-response">Trace <span class="tab-count"><?php echo count($_panel_request_pairs) + count($_panel_response_pairs); ?></span></label>
         <?php endif; ?>
@@ -3445,6 +3436,53 @@ foreach ($_v_cookies as $_wire => $_c):
             <input type="text" name="headerAddValue" placeholder="en-GB,en;q=0.9" autocomplete="off"/>
             <button type="submit">Add</button>
         </form>
+    </section>
+
+    <section class="tab-panel" data-tab="tools">
+        <p class="tab-help">Quick network checks for any host the server can reach. All three calls share the proxy's SSRF blocklist (loopback, RFC1918, link-local).</p>
+        <div class="netcheck-row">
+            <form class="card netcheck" data-netcheck="portcheck" autocomplete="off">
+                <div class="netcheck-title">Port Check</div>
+                <div class="netcheck-sub">TCP reachability + latency</div>
+                <div class="netcheck-fields">
+                    <input type="text" name="host" placeholder="host.example.com" required spellcheck="false" autocapitalize="off"/>
+                    <input type="number" name="port" placeholder="443" min="1" max="65535" required/>
+                </div>
+                <button class="button-submit" type="submit">Check</button>
+                <pre class="netcheck-result" hidden></pre>
+            </form>
+            <form class="card netcheck" data-netcheck="dns" autocomplete="off">
+                <div class="netcheck-title">DNS Check</div>
+                <div class="netcheck-sub">Resolve A / AAAA / MX / TXT / NS / CAA / …</div>
+                <div class="netcheck-fields">
+                    <input type="text" name="host" placeholder="example.com" required spellcheck="false" autocapitalize="off"/>
+                    <select name="type">
+                        <option value="A">A</option>
+                        <option value="AAAA">AAAA</option>
+                        <option value="MX">MX</option>
+                        <option value="TXT">TXT</option>
+                        <option value="NS">NS</option>
+                        <option value="SOA">SOA</option>
+                        <option value="CAA">CAA</option>
+                        <option value="CNAME">CNAME</option>
+                        <option value="SRV">SRV</option>
+                        <option value="ANY">ANY</option>
+                    </select>
+                </div>
+                <button class="button-submit" type="submit">Lookup</button>
+                <pre class="netcheck-result" hidden></pre>
+            </form>
+            <form class="card netcheck" data-netcheck="cert" autocomplete="off">
+                <div class="netcheck-title">SSL Check</div>
+                <div class="netcheck-sub">Inspect leaf certificate + chain</div>
+                <div class="netcheck-fields">
+                    <input type="text" name="host" placeholder="example.com" required spellcheck="false" autocapitalize="off"/>
+                    <input type="number" name="port" placeholder="443" min="1" max="65535" value="443" required/>
+                </div>
+                <button class="button-submit" type="submit">Inspect</button>
+                <pre class="netcheck-result" hidden></pre>
+            </form>
+        </div>
     </section>
 
     <?php if ($_panel_show_response): ?>
@@ -4600,6 +4638,7 @@ p.info { background: var(--success-soft); color: var(--text); border-left: 3px s
 #tab-options:checked  ~ .tabs label[for="tab-options"],
 #tab-cookies:checked  ~ .tabs label[for="tab-cookies"],
 #tab-headers:checked  ~ .tabs label[for="tab-headers"],
+#tab-tools:checked    ~ .tabs label[for="tab-tools"],
 #tab-response:checked ~ .tabs label[for="tab-response"] {
     color: var(--accent);
     border-bottom-color: var(--accent);
@@ -4610,6 +4649,7 @@ p.info { background: var(--success-soft); color: var(--text); border-left: 3px s
 #tab-options:checked  ~ .tab-panel[data-tab="options"],
 #tab-cookies:checked  ~ .tab-panel[data-tab="cookies"],
 #tab-headers:checked  ~ .tab-panel[data-tab="headers"],
+#tab-tools:checked    ~ .tab-panel[data-tab="tools"],
 #tab-response:checked ~ .tab-panel[data-tab="response"] {
     display: block;
 }
@@ -5400,6 +5440,7 @@ function phproxy_panel_css(): string {
 #phproxy-panel #tab-options:checked  ~ .tabs label[for="tab-options"],
 #phproxy-panel #tab-cookies:checked  ~ .tabs label[for="tab-cookies"],
 #phproxy-panel #tab-headers:checked  ~ .tabs label[for="tab-headers"],
+#phproxy-panel #tab-tools:checked    ~ .tabs label[for="tab-tools"],
 #phproxy-panel #tab-response:checked ~ .tabs label[for="tab-response"],
 #phproxy-panel #tab-cli:checked      ~ .tabs label[for="tab-cli"],
 #phproxy-panel #tab-network:checked  ~ .tabs label[for="tab-network"] {
@@ -5411,6 +5452,7 @@ function phproxy_panel_css(): string {
 #phproxy-panel #tab-options:checked  ~ .tab-panel[data-tab="options"],
 #phproxy-panel #tab-cookies:checked  ~ .tab-panel[data-tab="cookies"],
 #phproxy-panel #tab-headers:checked  ~ .tab-panel[data-tab="headers"],
+#phproxy-panel #tab-tools:checked    ~ .tab-panel[data-tab="tools"],
 #phproxy-panel #tab-response:checked ~ .tab-panel[data-tab="response"],
 #phproxy-panel #tab-cli:checked      ~ .tab-panel[data-tab="cli"],
 #phproxy-panel #tab-network:checked  ~ .tab-panel[data-tab="network"] {
