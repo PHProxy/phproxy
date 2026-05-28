@@ -33,8 +33,8 @@ an inline settings panel injected into proxied pages.
   block third-party resources, block iframes / web fonts / media, send
   `DNT: 1` and `Sec-GPC: 1`, strip `<title>` / `<meta>`.
 - **HTML5 UI** with light & dark themes (manual toggle + `prefers-color-scheme`).
-- **Three URL forms** — `?_proxurl=…`, `index.php/<url>`, or bare-path
-  `phproxy.example/https://target/` with `mod_rewrite`.
+- **Two URL forms** — `?_proxurl=…` or `index.php/<url>`. Works on any
+  PHP host, no Apache rewrite rules required.
 - **PHP 8.5 clean** — zero deprecations under `E_ALL`. CI lints on 8.1 + 8.5.
 
 ## What it is
@@ -81,33 +81,34 @@ runs the baked-in copy of `index.php`.
 ```sh
 cd /var/www/html
 curl -O https://raw.githubusercontent.com/PHProxy/phproxy/master/index.php
-curl -O https://raw.githubusercontent.com/PHProxy/phproxy/master/.htaccess
 ```
 
-That's it — `index.php` is the entire script. The `.htaccess` enables the
-bare-path URL form (`phproxy.example/https://target/`); it's optional and
-the script works without it.
-
-Visit `http://your-host/` (or wherever you dropped it).
+That's it — one file is the entire script. Visit `http://your-host/`.
 
 ### Standalone shared hosting
 
-If you don't have shell access, download
+Download
 [`index.php`](https://raw.githubusercontent.com/PHProxy/phproxy/master/index.php)
-and (optionally) [`.htaccess`](https://raw.githubusercontent.com/PHProxy/phproxy/master/.htaccess)
-and upload both via FTP / your host's file manager to the web root.
+and upload via FTP / your host's file manager to the web root.
+
+### PHP's built-in dev server
+
+For local use without Apache / nginx / Docker:
+
+```sh
+php -S 0.0.0.0:8080 index.php
+```
+
+Then open <http://localhost:8080/>. Single-threaded; fine for personal
+use, not for production.
 
 ### Rename to `proxy.php` (or anything else)
 
-`index.php` self-references via `$_SERVER['PHP_SELF']`. Just rename the file
-— forms, redirects and asset URLs all stay correct.
-
-If you keep the `.htaccess`, edit it to point the rewrite rules at the new
-filename.
+`index.php` self-references via `$_SERVER['PHP_SELF']`. Just rename — forms,
+redirects, and asset URLs all stay correct:
 
 ```sh
 mv index.php proxy.php
-sed -i 's|index\.php|proxy.php|g' .htaccess
 ```
 
 ## Requirements
@@ -118,22 +119,17 @@ sed -i 's|index\.php|proxy.php|g' .htaccess
   are on by default in mainstream PHP builds).
 - `zlib` extension for output compression — optional.
 - `file_uploads = On` if you want POSTed file uploads to flow through.
-- Apache `mod_rewrite` + `AllowOverride All` for the bare-path URL form —
-  optional. The Docker image is preconfigured.
 
 ## URL forms
 
-PHProxy accepts the target URL in three shapes:
+PHProxy accepts the target URL in two shapes:
 
-| Form | Example | Needs `mod_rewrite`? |
-| --- | --- | --- |
-| Query (default) | `https://proxy.example/?_proxurl=<encoded>` | no |
-| Path via `index.php` | `https://proxy.example/index.php/https://target/` | no |
-| Bare path | `https://proxy.example/https://target/` | yes |
+| Form | Example |
+| --- | --- |
+| Query (default) | `https://proxy.example/?_proxurl=<encoded>` |
+| Path via `index.php` | `https://proxy.example/index.php/https://target/` |
 
-The first two work everywhere. The bare-path form is the prettiest but
-needs Apache `mod_rewrite` and the shipped `.htaccess` to be honoured
-(`AllowOverride All` in your vhost config).
+Both work on any web server, no rewrite rules needed.
 
 ## Anonymity
 

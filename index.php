@@ -1008,8 +1008,9 @@ if (isset($_GET['action']) && $_SERVER['REQUEST_METHOD'] === 'POST')
 }
 
 //
-// Legacy /edit.php compatibility — accepts the old userAgent POST shape.
-// Old bookmarks still find their way home via the .htaccess redirect.
+// Legacy /edit.php compatibility — accepts the old userAgent POST shape
+// from any caller that still wires forms to action=submit&userAgent=…
+// (bare GET to /edit.php now 404s; that path is no longer rewritten).
 if (isset($_POST['action']) && $_POST['action'] === 'submit' && isset($_POST['userAgent']) && !isset($_GET['action']))
 {
     $_ua_legacy = (string) $_POST['userAgent'];
