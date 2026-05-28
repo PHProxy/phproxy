@@ -2456,7 +2456,11 @@ if(preg_match('/facebook\.com[.]?$/', $_url_parts['host']) && $_content_type == 
         // host page's elements. Loading index.css here instead would leak
         // global rules like `* { box-sizing }` and `body { font }` onto the
         // proxied content.
-        $_css_link_safe  = htmlspecialchars($_script_base . '?asset=panel.css', ENT_QUOTES);
+        // Bust the browser cache on every release — the version string is
+        // bumped in the file's $_version line, and that string travels with
+        // the URL so the browser fetches the new CSS instead of using a
+        // stale Cache-Control'd copy from a previous release.
+        $_css_link_safe  = htmlspecialchars($_script_base . '?asset=panel.css&v=' . $_version, ENT_QUOTES);
 
         // Panel open/active-tab state — set by the dispatcher right after each
         // save action so the panel re-opens on the same tab the user just
@@ -2661,7 +2665,7 @@ if (!isset($_valid_tabs[$_active_tab])) $_active_tab = 'options';
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <title><?php echo htmlspecialchars($GLOBALS['_config']['site_name']); ?></title>
-    <link rel="stylesheet" href="?asset=index.css"/>
+    <link rel="stylesheet" href="?asset=index.css&amp;v=<?php echo htmlspecialchars($GLOBALS['_version']); ?>"/>
     <script>
     (function () {
         var s = null;
