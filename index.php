@@ -2507,7 +2507,12 @@ CSS;
             request_pairs:  $_panel_request_pairs,
             request_line:   $_panel_request_line,
             active_tab:     $_panel_active_tab,
-            form_id:        ''
+            form_id:        '',
+            show_cli:       true,
+            cli_url:        $_url,
+            cli_method:     $_request_method,
+            cli_headers:    $_panel_request_pairs,
+            cli_body:       (string) ($_post_body ?? '')
         );
         $_panel_inner_html = ob_get_clean();
 
@@ -2550,6 +2555,17 @@ CSS;
             .   "var sel=document.getElementById('ua-preset');"
             .   "var inp=document.getElementById('ua-input');"
             .   "if(sel&&inp){sel.addEventListener('change',function(){if(sel.value==='__custom__'){inp.focus();inp.select();}else{inp.value=sel.value;}});}"
+            .   "document.querySelectorAll('.cli-copy').forEach(function(btn){"
+            .     "btn.addEventListener('click',function(){"
+            .       "var t=document.getElementById(btn.dataset.target);"
+            .       "if(!t)return;"
+            .       "var text=t.textContent;"
+            .       "var done=function(){var orig=btn.textContent;btn.textContent='Copied!';setTimeout(function(){btn.textContent=orig;},1500);};"
+            .       "if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done,done);}else{"
+            .         "var ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');done();}catch(e){}document.body.removeChild(ta);"
+            .       "}"
+            .     "});"
+            .   "});"
             . "})();</script>";
 
         $_response_body = preg_replace('#\<\s*body(.*?)\>#si', "$0\n$_url_form" , $_response_body, 1);
@@ -2782,7 +2798,12 @@ function phproxy_render_panel_tabs(
     array $request_pairs = [],
     string $request_line = '',
     string $active_tab = 'options',
-    string $form_id = ''
+    string $form_id = '',
+    bool $show_cli = false,
+    string $cli_url = '',
+    string $cli_method = 'GET',
+    array $cli_headers = [],
+    string $cli_body = ''
 ): void {
     // Local aliases keep the existing template body unchanged
     $_panel_return_to      = $return_to;
@@ -2792,6 +2813,11 @@ function phproxy_render_panel_tabs(
     $_panel_request_line   = $request_line;
     $_panel_active_tab     = $active_tab;
     $_panel_form_id        = $form_id;
+    $_panel_show_cli       = $show_cli;
+    $_panel_cli_url        = $cli_url;
+    $_panel_cli_method     = $cli_method;
+    $_panel_cli_headers    = $cli_headers;
+    $_panel_cli_body       = $cli_body;
 
 $_panel_return_html = $_panel_return_to !== ''
     ? '<input type="hidden" name="return_to" value="' . htmlspecialchars($_panel_return_to, ENT_QUOTES) . '"/>'
@@ -2815,6 +2841,9 @@ $_ua_presets_local = $GLOBALS['_ua_presets'] ?? [];
     <?php if ($_panel_show_response): ?>
     <input type="radio" name="tab" id="tab-response"<?php echo $_panel_active_tab === 'response' ? ' checked' : ''; ?>/>
     <?php endif; ?>
+    <?php if ($_panel_show_cli): ?>
+    <input type="radio" name="tab" id="tab-cli"<?php echo $_panel_active_tab === 'cli' ? ' checked' : ''; ?>/>
+    <?php endif; ?>
 
     <nav class="tabs">
         <label for="tab-options">Options</label>
@@ -2822,6 +2851,9 @@ $_ua_presets_local = $GLOBALS['_ua_presets'] ?? [];
         <label for="tab-headers">Headers <span class="tab-count"><?php echo count($_c_headers); ?></span></label>
         <?php if ($_panel_show_response): ?>
         <label for="tab-response">Trace <span class="tab-count"><?php echo count($_panel_request_pairs) + count($_panel_response_pairs); ?></span></label>
+        <?php endif; ?>
+        <?php if ($_panel_show_cli): ?>
+        <label for="tab-cli">CLI</label>
         <?php endif; ?>
     </nav>
 
@@ -3102,11 +3134,199 @@ foreach ($_v_cookies as $_wire => $_c):
 <?php endif; ?>
     </section>
     <?php endif; ?>
+
+    <?php if ($_panel_show_cli):
+        $_cli_snippets = [
+            'curl'   => ['label' => 'curl',       'code' => phproxy_cli_curl  ($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body)],
+            'php'    => ['label' => 'PHP',        'code' => phproxy_cli_php   ($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body)],
+            'python' => ['label' => 'Python',     'code' => phproxy_cli_python($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body)],
+            'js'     => ['label' => 'JavaScript', 'code' => phproxy_cli_js    ($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body)],
+            'go'     => ['label' => 'Go',         'code' => phproxy_cli_go    ($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body)],
+        ];
+        $_cli_first = true;
+    ?>
+    <section class="tab-panel" data-tab="cli">
+        <p class="tab-help">Replicate the upstream request the proxy just made — copy a snippet, run it directly against the target. Doesn't go through PHProxy.</p>
+        <div class="cli-wrap">
+<?php foreach ($_cli_snippets as $_cli_key => $_cli_meta): ?>
+            <input type="radio" name="cli-tab" id="cli-tab-<?php echo $_cli_key; ?>"<?php echo $_cli_first ? ' checked' : ''; $_cli_first = false; ?>/>
+<?php endforeach; ?>
+            <nav class="cli-tabs">
+<?php foreach ($_cli_snippets as $_cli_key => $_cli_meta): ?>
+                <label for="cli-tab-<?php echo $_cli_key; ?>"><?php echo htmlspecialchars($_cli_meta['label']); ?></label>
+<?php endforeach; ?>
+            </nav>
+<?php foreach ($_cli_snippets as $_cli_key => $_cli_meta): ?>
+            <section class="cli-panel" data-cli="<?php echo $_cli_key; ?>">
+                <div class="cli-toolbar">
+                    <button type="button" class="button-cancel cli-copy" data-target="cli-snippet-<?php echo $_cli_key; ?>">Copy</button>
+                </div>
+                <pre id="cli-snippet-<?php echo $_cli_key; ?>" class="cli-snippet"><?php echo htmlspecialchars($_cli_meta['code']); ?></pre>
+            </section>
+<?php endforeach; ?>
+        </div>
+    </section>
+    <?php endif; ?>
 </div>
 <?php
 }
 
 // --- EMBEDDED STYLESHEETS (served via ?asset=...) ---
+
+/**
+ * CLI snippet helpers — build copy-pasteable code that replicates the
+ * upstream request the proxy just made, in a handful of languages. The
+ * snippets target the upstream directly (not the JSON API), so a user
+ * can take the output and run it without going through PHProxy.
+ *
+ * Each helper takes the same shape: ($url, $method, $headers, $body) and
+ * returns a single-string snippet. Quoting / escaping is per-language so
+ * values containing apostrophes or backslashes survive the round-trip.
+ */
+
+function phproxy_snip_shell(string $v): string {
+    // POSIX-shell single-quoted: close, escaped quote, reopen — 'don'\''t' style
+    return "'" . str_replace("'", "'\\''", $v) . "'";
+}
+function phproxy_snip_php(string $v): string {
+    return "'" . str_replace(['\\', "'"], ['\\\\', "\\'"], $v) . "'";
+}
+function phproxy_snip_py(string $v): string {
+    $escaped = str_replace(['\\', "'", "\n", "\r"], ['\\\\', "\\'", '\\n', '\\r'], $v);
+    return "'" . $escaped . "'";
+}
+function phproxy_snip_js(string $v): string {
+    $escaped = str_replace(['\\', "'", "\n", "\r"], ['\\\\', "\\'", '\\n', '\\r'], $v);
+    return "'" . $escaped . "'";
+}
+function phproxy_snip_go(string $v): string {
+    $escaped = str_replace(['\\', '"', "\n", "\r", "\t"], ['\\\\', '\\"', '\\n', '\\r', '\\t'], $v);
+    return '"' . $escaped . '"';
+}
+
+/**
+ * curl snippet — multi-line with line-continuation backslashes.
+ */
+function phproxy_cli_curl(string $url, string $method, array $headers, string $body = ''): string {
+    $lines = ['curl -X ' . phproxy_snip_shell($method) . ' ' . phproxy_snip_shell($url) . ' \\'];
+    foreach ($headers as $h) {
+        [$name, $value] = $h;
+        $lines[] = '  -H ' . phproxy_snip_shell($name . ': ' . $value) . ' \\';
+    }
+    if ($body !== '') {
+        $lines[] = '  --data-binary ' . phproxy_snip_shell($body);
+    } else {
+        // strip trailing backslash from last header line
+        $lines[count($lines) - 1] = rtrim($lines[count($lines) - 1], ' \\');
+    }
+    return implode("\n", $lines);
+}
+
+/**
+ * PHP cURL snippet.
+ */
+function phproxy_cli_php(string $url, string $method, array $headers, string $body = ''): string {
+    $out = "<?php\n";
+    $out .= '$ch = curl_init(' . phproxy_snip_php($url) . ");\n";
+    $out .= "curl_setopt_array(\$ch, [\n";
+    $out .= '    CURLOPT_CUSTOMREQUEST  => ' . phproxy_snip_php($method) . ",\n";
+    $out .= "    CURLOPT_RETURNTRANSFER => true,\n";
+    $out .= "    CURLOPT_FOLLOWLOCATION => true,\n";
+    if (!empty($headers)) {
+        $out .= "    CURLOPT_HTTPHEADER     => [\n";
+        foreach ($headers as $h) {
+            [$name, $value] = $h;
+            $out .= '        ' . phproxy_snip_php($name . ': ' . $value) . ",\n";
+        }
+        $out .= "    ],\n";
+    }
+    if ($body !== '') {
+        $out .= '    CURLOPT_POSTFIELDS     => ' . phproxy_snip_php($body) . ",\n";
+    }
+    $out .= "]);\n";
+    $out .= "\$response = curl_exec(\$ch);\n";
+    $out .= "\$status   = curl_getinfo(\$ch, CURLINFO_HTTP_CODE);\n";
+    $out .= "curl_close(\$ch);\n\n";
+    $out .= "echo \$status, \"\\n\", \$response;";
+    return $out;
+}
+
+/**
+ * Python `requests` snippet.
+ */
+function phproxy_cli_python(string $url, string $method, array $headers, string $body = ''): string {
+    $out = "import requests\n\n";
+    $out .= 'response = requests.request(' . phproxy_snip_py($method) . ', ' . phproxy_snip_py($url) . ",\n";
+    if (!empty($headers)) {
+        $out .= "    headers={\n";
+        foreach ($headers as $h) {
+            [$name, $value] = $h;
+            $out .= '        ' . phproxy_snip_py($name) . ': ' . phproxy_snip_py($value) . ",\n";
+        }
+        $out .= "    },\n";
+    }
+    if ($body !== '') {
+        $out .= '    data=' . phproxy_snip_py($body) . ",\n";
+    }
+    $out .= "    allow_redirects=True,\n";
+    $out .= ")\n\n";
+    $out .= "print(response.status_code)\n";
+    $out .= "print(response.text)";
+    return $out;
+}
+
+/**
+ * JavaScript `fetch` snippet (works in browsers and Node 18+).
+ */
+function phproxy_cli_js(string $url, string $method, array $headers, string $body = ''): string {
+    $out = 'const response = await fetch(' . phproxy_snip_js($url) . ", {\n";
+    $out .= '    method: ' . phproxy_snip_js($method) . ",\n";
+    if (!empty($headers)) {
+        $out .= "    headers: {\n";
+        foreach ($headers as $h) {
+            [$name, $value] = $h;
+            $out .= '        ' . phproxy_snip_js($name) . ': ' . phproxy_snip_js($value) . ",\n";
+        }
+        $out .= "    },\n";
+    }
+    if ($body !== '') {
+        $out .= '    body: ' . phproxy_snip_js($body) . ",\n";
+    }
+    $out .= "});\n";
+    $out .= "console.log(response.status, await response.text());";
+    return $out;
+}
+
+/**
+ * Go net/http snippet.
+ */
+function phproxy_cli_go(string $url, string $method, array $headers, string $body = ''): string {
+    $out  = "package main\n\n";
+    $out .= "import (\n";
+    $out .= "    \"fmt\"\n";
+    $out .= "    \"io\"\n";
+    $out .= "    \"net/http\"\n";
+    if ($body !== '') $out .= "    \"strings\"\n";
+    $out .= ")\n\n";
+    $out .= "func main() {\n";
+    if ($body !== '') {
+        $out .= '    req, _ := http.NewRequest(' . phproxy_snip_go($method) . ', ' . phproxy_snip_go($url) . ', strings.NewReader(' . phproxy_snip_go($body) . "))\n";
+    } else {
+        $out .= '    req, _ := http.NewRequest(' . phproxy_snip_go($method) . ', ' . phproxy_snip_go($url) . ", nil)\n";
+    }
+    foreach ($headers as $h) {
+        [$name, $value] = $h;
+        $out .= '    req.Header.Set(' . phproxy_snip_go($name) . ', ' . phproxy_snip_go($value) . ")\n";
+    }
+    $out .= "\n";
+    $out .= "    resp, err := (&http.Client{}).Do(req)\n";
+    $out .= "    if err != nil { panic(err) }\n";
+    $out .= "    defer resp.Body.Close()\n";
+    $out .= "    body, _ := io.ReadAll(resp.Body)\n";
+    $out .= "    fmt.Println(resp.StatusCode, string(body))\n";
+    $out .= "}";
+    return $out;
+}
 
 /**
  * JSON API: fetch a URL on behalf of the caller with the given headers,
@@ -4411,7 +4631,8 @@ function phproxy_panel_css(): string {
 #phproxy-panel #tab-options:checked  ~ .tabs label[for="tab-options"],
 #phproxy-panel #tab-cookies:checked  ~ .tabs label[for="tab-cookies"],
 #phproxy-panel #tab-headers:checked  ~ .tabs label[for="tab-headers"],
-#phproxy-panel #tab-response:checked ~ .tabs label[for="tab-response"] {
+#phproxy-panel #tab-response:checked ~ .tabs label[for="tab-response"],
+#phproxy-panel #tab-cli:checked      ~ .tabs label[for="tab-cli"] {
     color: var(--accent);
     border-bottom-color: var(--accent);
 }
@@ -4420,8 +4641,68 @@ function phproxy_panel_css(): string {
 #phproxy-panel #tab-options:checked  ~ .tab-panel[data-tab="options"],
 #phproxy-panel #tab-cookies:checked  ~ .tab-panel[data-tab="cookies"],
 #phproxy-panel #tab-headers:checked  ~ .tab-panel[data-tab="headers"],
-#phproxy-panel #tab-response:checked ~ .tab-panel[data-tab="response"] {
+#phproxy-panel #tab-response:checked ~ .tab-panel[data-tab="response"],
+#phproxy-panel #tab-cli:checked      ~ .tab-panel[data-tab="cli"] {
     display: block;
+}
+
+/* CLI tab — sub-tabs for curl / PHP / Python / JS / Go */
+#phproxy-panel .cli-wrap > input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+#phproxy-panel .cli-tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+#phproxy-panel .cli-tabs label {
+    padding: 6px 12px;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 500;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    cursor: pointer;
+    transition: color .15s, border-color .15s;
+}
+#phproxy-panel .cli-tabs label:hover { color: var(--text); }
+#phproxy-panel #cli-tab-curl:checked   ~ .cli-tabs label[for="cli-tab-curl"],
+#phproxy-panel #cli-tab-php:checked    ~ .cli-tabs label[for="cli-tab-php"],
+#phproxy-panel #cli-tab-python:checked ~ .cli-tabs label[for="cli-tab-python"],
+#phproxy-panel #cli-tab-js:checked     ~ .cli-tabs label[for="cli-tab-js"],
+#phproxy-panel #cli-tab-go:checked     ~ .cli-tabs label[for="cli-tab-go"] {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+#phproxy-panel .cli-panel { display: none; }
+#phproxy-panel #cli-tab-curl:checked   ~ .cli-panel[data-cli="curl"],
+#phproxy-panel #cli-tab-php:checked    ~ .cli-panel[data-cli="php"],
+#phproxy-panel #cli-tab-python:checked ~ .cli-panel[data-cli="python"],
+#phproxy-panel #cli-tab-js:checked     ~ .cli-panel[data-cli="js"],
+#phproxy-panel #cli-tab-go:checked     ~ .cli-panel[data-cli="go"] {
+    display: block;
+}
+#phproxy-panel .cli-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 8px;
+}
+#phproxy-panel .cli-toolbar .button-cancel { padding: 6px 12px; font-size: 12px; }
+#phproxy-panel .cli-snippet {
+    margin: 0;
+    padding: 14px 16px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font: 12.5px/1.55 var(--font-mono);
+    color: var(--text);
+    overflow-x: auto;
+    white-space: pre;
+    -webkit-text-size-adjust: 100%;
 }
 
 #phproxy-panel .option-group {
