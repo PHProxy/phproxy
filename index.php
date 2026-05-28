@@ -2550,6 +2550,7 @@ CSS;
             cli_method:          $_request_method,
             cli_headers:         $_panel_request_pairs,
             cli_body:            (string) ($_post_body ?? ''),
+            cli_api_url:         $_script_url . '?api=fetch',
             show_network:        true,
             network_entries:     $_SESSION['phproxy_network'] ?? [],
             network_current_url: $_url
@@ -2844,6 +2845,7 @@ function phproxy_render_panel_tabs(
     string $cli_method = 'GET',
     array $cli_headers = [],
     string $cli_body = '',
+    string $cli_api_url = '',
     bool $show_network = false,
     array $network_entries = [],
     string $network_current_url = ''
@@ -2861,6 +2863,7 @@ function phproxy_render_panel_tabs(
     $_panel_cli_method     = $cli_method;
     $_panel_cli_headers    = $cli_headers;
     $_panel_cli_body       = $cli_body;
+    $_panel_cli_api_url    = $cli_api_url;
     $_panel_show_network   = $show_network;
     $_panel_network        = $network_entries;
     $_panel_net_current    = $network_current_url;
@@ -3189,16 +3192,36 @@ foreach ($_v_cookies as $_wire => $_c):
 
     <?php if ($_panel_show_cli):
         $_cli_snippets = [
-            'curl'   => ['label' => 'curl',       'code' => phproxy_cli_curl  ($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body)],
-            'php'    => ['label' => 'PHP',        'code' => phproxy_cli_php   ($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body)],
-            'python' => ['label' => 'Python',     'code' => phproxy_cli_python($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body)],
-            'js'     => ['label' => 'JavaScript', 'code' => phproxy_cli_js    ($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body)],
-            'go'     => ['label' => 'Go',         'code' => phproxy_cli_go    ($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body)],
+            'curl'   => [
+                'label'  => 'curl',
+                'direct' => phproxy_cli_curl_direct($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body),
+                'proxy'  => phproxy_cli_curl_proxy($_panel_cli_api_url, $_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, [], $_panel_cli_body),
+            ],
+            'php'    => [
+                'label'  => 'PHP',
+                'direct' => phproxy_cli_php_direct($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body),
+                'proxy'  => phproxy_cli_php_proxy($_panel_cli_api_url, $_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, [], $_panel_cli_body),
+            ],
+            'python' => [
+                'label'  => 'Python',
+                'direct' => phproxy_cli_python_direct($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body),
+                'proxy'  => phproxy_cli_python_proxy($_panel_cli_api_url, $_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, [], $_panel_cli_body),
+            ],
+            'js'     => [
+                'label'  => 'JavaScript',
+                'direct' => phproxy_cli_js_direct($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body),
+                'proxy'  => phproxy_cli_js_proxy($_panel_cli_api_url, $_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, [], $_panel_cli_body),
+            ],
+            'go'     => [
+                'label'  => 'Go',
+                'direct' => phproxy_cli_go_direct($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body),
+                'proxy'  => phproxy_cli_go_proxy($_panel_cli_api_url, $_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, [], $_panel_cli_body),
+            ],
         ];
         $_cli_first = true;
     ?>
     <section class="tab-panel" data-tab="cli">
-        <p class="tab-help">Replicate the upstream request the proxy just made — copy a snippet, run it directly against the target. Doesn't go through PHProxy.</p>
+        <p class="tab-help">Reproduce this request from the command line. <strong>Direct</strong> hits the upstream target without involving PHProxy; <strong>Via PHProxy</strong> POSTs to the JSON API and gets the response back through the proxy.</p>
         <div class="cli-wrap">
 <?php foreach ($_cli_snippets as $_cli_key => $_cli_meta): ?>
             <input type="radio" name="cli-tab" id="cli-tab-<?php echo $_cli_key; ?>"<?php echo $_cli_first ? ' checked' : ''; $_cli_first = false; ?>/>
@@ -3210,10 +3233,20 @@ foreach ($_v_cookies as $_wire => $_c):
             </nav>
 <?php foreach ($_cli_snippets as $_cli_key => $_cli_meta): ?>
             <section class="cli-panel" data-cli="<?php echo $_cli_key; ?>">
-                <div class="cli-toolbar">
-                    <button type="button" class="button-cancel cli-copy" data-target="cli-snippet-<?php echo $_cli_key; ?>">Copy</button>
+                <div class="cli-variant">
+                    <div class="cli-toolbar">
+                        <span class="cli-variant-label">Direct to upstream</span>
+                        <button type="button" class="button-cancel cli-copy" data-target="cli-snippet-<?php echo $_cli_key; ?>-direct">Copy</button>
+                    </div>
+                    <pre id="cli-snippet-<?php echo $_cli_key; ?>-direct" class="cli-snippet"><?php echo htmlspecialchars($_cli_meta['direct']); ?></pre>
                 </div>
-                <pre id="cli-snippet-<?php echo $_cli_key; ?>" class="cli-snippet"><?php echo htmlspecialchars($_cli_meta['code']); ?></pre>
+                <div class="cli-variant">
+                    <div class="cli-toolbar">
+                        <span class="cli-variant-label">Via PHProxy <code>?api=fetch</code></span>
+                        <button type="button" class="button-cancel cli-copy" data-target="cli-snippet-<?php echo $_cli_key; ?>-proxy">Copy</button>
+                    </div>
+                    <pre id="cli-snippet-<?php echo $_cli_key; ?>-proxy" class="cli-snippet"><?php echo htmlspecialchars($_cli_meta['proxy']); ?></pre>
+                </div>
             </section>
 <?php endforeach; ?>
         </div>
@@ -3345,9 +3378,58 @@ function phproxy_snip_go(string $v): string {
 }
 
 /**
- * curl snippet — multi-line with line-continuation backslashes.
+ * Strip headers that the JSON API rebuilds itself (so the "Via PHProxy"
+ * snippets don't double them up). Also returns the Cookie header parsed
+ * into a {name: value} dict for the api's `cookies` field.
  */
-function phproxy_cli_curl(string $url, string $method, array $headers, string $body = ''): string {
+function phproxy_cli_split_for_api(array $headers): array
+{
+    $skip = ['host' => 1, 'connection' => 1, 'content-length' => 1, 'cookie' => 1];
+    $filtered = [];
+    $cookies  = [];
+    foreach ($headers as $h) {
+        [$name, $value] = $h;
+        $lower = strtolower($name);
+        if ($lower === 'cookie') {
+            foreach (preg_split('/;\s*/', $value) as $pair) {
+                if ($pair === '') continue;
+                $eq = strpos($pair, '=');
+                if ($eq === false) continue;
+                $cookies[substr($pair, 0, $eq)] = substr($pair, $eq + 1);
+            }
+            continue;
+        }
+        if (isset($skip[$lower])) continue;
+        $filtered[] = $h;
+    }
+    return ['headers' => $filtered, 'cookies' => $cookies];
+}
+
+/**
+ * Build the JSON payload string the API expects. Pretty-printed so
+ * snippets stay readable when shown in the panel.
+ */
+function phproxy_cli_api_payload(string $url, string $method, array $headers, array $cookies, string $body): string
+{
+    $payload = ['url' => $url];
+    if ($method !== 'GET') $payload['method'] = $method;
+    if (!empty($headers)) {
+        $payload['headers'] = [];
+        foreach ($headers as $h) {
+            [$name, $value] = $h;
+            $payload['headers'][$name] = $value;
+        }
+    }
+    if (!empty($cookies)) $payload['cookies'] = $cookies;
+    if ($body !== '')     $payload['body']    = $body;
+    return json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+}
+
+/**
+ * curl — direct fetch to upstream.
+ */
+function phproxy_cli_curl_direct(string $url, string $method, array $headers, string $body = ''): string
+{
     $lines = ['curl -X ' . phproxy_snip_shell($method) . ' ' . phproxy_snip_shell($url) . ' \\'];
     foreach ($headers as $h) {
         [$name, $value] = $h;
@@ -3356,17 +3438,33 @@ function phproxy_cli_curl(string $url, string $method, array $headers, string $b
     if ($body !== '') {
         $lines[] = '  --data-binary ' . phproxy_snip_shell($body);
     } else {
-        // strip trailing backslash from last header line
         $lines[count($lines) - 1] = rtrim($lines[count($lines) - 1], ' \\');
     }
     return implode("\n", $lines);
 }
 
 /**
- * PHP cURL snippet.
+ * curl — POST the JSON envelope to /index.php?api=fetch so the upstream
+ * fetch happens through PHProxy. Pipes the resulting JSON to jq for the
+ * body field.
  */
-function phproxy_cli_php(string $url, string $method, array $headers, string $body = ''): string {
-    $out = "<?php\n";
+function phproxy_cli_curl_proxy(string $api_url, string $upstream, string $method, array $headers, array $cookies, string $body = ''): string
+{
+    $split   = phproxy_cli_split_for_api($headers);
+    $payload = phproxy_cli_api_payload($upstream, $method, $split['headers'], $cookies, $body);
+    $out  = 'curl -X POST ' . phproxy_snip_shell($api_url) . ' \\' . "\n";
+    $out .= '  -H ' . phproxy_snip_shell('Content-Type: application/json') . ' \\' . "\n";
+    $out .= '  -d ' . phproxy_snip_shell($payload) . " \\\n";
+    $out .= "  | jq -r .body";
+    return $out;
+}
+
+/**
+ * PHP cURL — direct.
+ */
+function phproxy_cli_php_direct(string $url, string $method, array $headers, string $body = ''): string
+{
+    $out  = "<?php\n";
     $out .= '$ch = curl_init(' . phproxy_snip_php($url) . ");\n";
     $out .= "curl_setopt_array(\$ch, [\n";
     $out .= '    CURLOPT_CUSTOMREQUEST  => ' . phproxy_snip_php($method) . ",\n";
@@ -3380,9 +3478,7 @@ function phproxy_cli_php(string $url, string $method, array $headers, string $bo
         }
         $out .= "    ],\n";
     }
-    if ($body !== '') {
-        $out .= '    CURLOPT_POSTFIELDS     => ' . phproxy_snip_php($body) . ",\n";
-    }
+    if ($body !== '') $out .= '    CURLOPT_POSTFIELDS     => ' . phproxy_snip_php($body) . ",\n";
     $out .= "]);\n";
     $out .= "\$response = curl_exec(\$ch);\n";
     $out .= "\$status   = curl_getinfo(\$ch, CURLINFO_HTTP_CODE);\n";
@@ -3392,10 +3488,45 @@ function phproxy_cli_php(string $url, string $method, array $headers, string $bo
 }
 
 /**
- * Python `requests` snippet.
+ * PHP cURL — via PHProxy JSON API.
  */
-function phproxy_cli_python(string $url, string $method, array $headers, string $body = ''): string {
-    $out = "import requests\n\n";
+function phproxy_cli_php_proxy(string $api_url, string $upstream, string $method, array $headers, array $cookies, string $body = ''): string
+{
+    $split   = phproxy_cli_split_for_api($headers);
+    $payload = [];
+    $payload['url']     = $upstream;
+    if ($method !== 'GET') $payload['method'] = $method;
+    if (!empty($split['headers'])) {
+        $payload['headers'] = [];
+        foreach ($split['headers'] as $h) {
+            [$name, $value] = $h;
+            $payload['headers'][$name] = $value;
+        }
+    }
+    if (!empty($split['cookies'])) $payload['cookies'] = $split['cookies'];
+    if ($body !== '') $payload['body'] = $body;
+
+    $out  = "<?php\n";
+    $out .= "\$payload = " . var_export($payload, true) . ";\n\n";
+    $out .= '$ch = curl_init(' . phproxy_snip_php($api_url) . ");\n";
+    $out .= "curl_setopt_array(\$ch, [\n";
+    $out .= "    CURLOPT_POST           => true,\n";
+    $out .= "    CURLOPT_POSTFIELDS     => json_encode(\$payload),\n";
+    $out .= "    CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],\n";
+    $out .= "    CURLOPT_RETURNTRANSFER => true,\n";
+    $out .= "]);\n";
+    $out .= "\$envelope = json_decode(curl_exec(\$ch), true);\n";
+    $out .= "curl_close(\$ch);\n\n";
+    $out .= "echo \$envelope['status'], \"\\n\", \$envelope['body'];";
+    return $out;
+}
+
+/**
+ * Python — direct.
+ */
+function phproxy_cli_python_direct(string $url, string $method, array $headers, string $body = ''): string
+{
+    $out  = "import requests\n\n";
     $out .= 'response = requests.request(' . phproxy_snip_py($method) . ', ' . phproxy_snip_py($url) . ",\n";
     if (!empty($headers)) {
         $out .= "    headers={\n";
@@ -3405,9 +3536,7 @@ function phproxy_cli_python(string $url, string $method, array $headers, string 
         }
         $out .= "    },\n";
     }
-    if ($body !== '') {
-        $out .= '    data=' . phproxy_snip_py($body) . ",\n";
-    }
+    if ($body !== '') $out .= '    data=' . phproxy_snip_py($body) . ",\n";
     $out .= "    allow_redirects=True,\n";
     $out .= ")\n\n";
     $out .= "print(response.status_code)\n";
@@ -3416,9 +3545,45 @@ function phproxy_cli_python(string $url, string $method, array $headers, string 
 }
 
 /**
- * JavaScript `fetch` snippet (works in browsers and Node 18+).
+ * Python — via PHProxy JSON API.
  */
-function phproxy_cli_js(string $url, string $method, array $headers, string $body = ''): string {
+function phproxy_cli_python_proxy(string $api_url, string $upstream, string $method, array $headers, array $cookies, string $body = ''): string
+{
+    $split = phproxy_cli_split_for_api($headers);
+    $out  = "import requests\n\n";
+    $out .= "payload = {\n";
+    $out .= '    "url":    ' . phproxy_snip_py($upstream) . ",\n";
+    if ($method !== 'GET') {
+        $out .= '    "method": ' . phproxy_snip_py($method) . ",\n";
+    }
+    if (!empty($split['headers'])) {
+        $out .= "    \"headers\": {\n";
+        foreach ($split['headers'] as $h) {
+            [$name, $value] = $h;
+            $out .= '        ' . phproxy_snip_py($name) . ': ' . phproxy_snip_py($value) . ",\n";
+        }
+        $out .= "    },\n";
+    }
+    if (!empty($split['cookies'])) {
+        $out .= "    \"cookies\": {\n";
+        foreach ($split['cookies'] as $cn => $cv) {
+            $out .= '        ' . phproxy_snip_py($cn) . ': ' . phproxy_snip_py($cv) . ",\n";
+        }
+        $out .= "    },\n";
+    }
+    if ($body !== '') $out .= '    "body":   ' . phproxy_snip_py($body) . ",\n";
+    $out .= "}\n\n";
+    $out .= 'envelope = requests.post(' . phproxy_snip_py($api_url) . ", json=payload).json()\n";
+    $out .= "print(envelope['status'])\n";
+    $out .= "print(envelope['body'])";
+    return $out;
+}
+
+/**
+ * JavaScript — direct.
+ */
+function phproxy_cli_js_direct(string $url, string $method, array $headers, string $body = ''): string
+{
     $out = 'const response = await fetch(' . phproxy_snip_js($url) . ", {\n";
     $out .= '    method: ' . phproxy_snip_js($method) . ",\n";
     if (!empty($headers)) {
@@ -3429,23 +3594,56 @@ function phproxy_cli_js(string $url, string $method, array $headers, string $bod
         }
         $out .= "    },\n";
     }
-    if ($body !== '') {
-        $out .= '    body: ' . phproxy_snip_js($body) . ",\n";
-    }
+    if ($body !== '') $out .= '    body: ' . phproxy_snip_js($body) . ",\n";
     $out .= "});\n";
     $out .= "console.log(response.status, await response.text());";
     return $out;
 }
 
 /**
- * Go net/http snippet.
+ * JavaScript — via PHProxy JSON API.
  */
-function phproxy_cli_go(string $url, string $method, array $headers, string $body = ''): string {
+function phproxy_cli_js_proxy(string $api_url, string $upstream, string $method, array $headers, array $cookies, string $body = ''): string
+{
+    $split = phproxy_cli_split_for_api($headers);
+    $out  = "const payload = {\n";
+    $out .= '    url: ' . phproxy_snip_js($upstream) . ",\n";
+    if ($method !== 'GET') $out .= '    method: ' . phproxy_snip_js($method) . ",\n";
+    if (!empty($split['headers'])) {
+        $out .= "    headers: {\n";
+        foreach ($split['headers'] as $h) {
+            [$name, $value] = $h;
+            $out .= '        ' . phproxy_snip_js($name) . ': ' . phproxy_snip_js($value) . ",\n";
+        }
+        $out .= "    },\n";
+    }
+    if (!empty($split['cookies'])) {
+        $out .= "    cookies: {\n";
+        foreach ($split['cookies'] as $cn => $cv) {
+            $out .= '        ' . phproxy_snip_js($cn) . ': ' . phproxy_snip_js($cv) . ",\n";
+        }
+        $out .= "    },\n";
+    }
+    if ($body !== '') $out .= '    body: ' . phproxy_snip_js($body) . ",\n";
+    $out .= "};\n\n";
+    $out .= 'const r = await fetch(' . phproxy_snip_js($api_url) . ", {\n";
+    $out .= "    method: 'POST',\n";
+    $out .= "    headers: { 'Content-Type': 'application/json' },\n";
+    $out .= "    body: JSON.stringify(payload),\n";
+    $out .= "});\n";
+    $out .= "const envelope = await r.json();\n";
+    $out .= "console.log(envelope.status, envelope.body);";
+    return $out;
+}
+
+/**
+ * Go — direct.
+ */
+function phproxy_cli_go_direct(string $url, string $method, array $headers, string $body = ''): string
+{
     $out  = "package main\n\n";
     $out .= "import (\n";
-    $out .= "    \"fmt\"\n";
-    $out .= "    \"io\"\n";
-    $out .= "    \"net/http\"\n";
+    $out .= "    \"fmt\"\n    \"io\"\n    \"net/http\"\n";
     if ($body !== '') $out .= "    \"strings\"\n";
     $out .= ")\n\n";
     $out .= "func main() {\n";
@@ -3464,6 +3662,55 @@ function phproxy_cli_go(string $url, string $method, array $headers, string $bod
     $out .= "    defer resp.Body.Close()\n";
     $out .= "    body, _ := io.ReadAll(resp.Body)\n";
     $out .= "    fmt.Println(resp.StatusCode, string(body))\n";
+    $out .= "}";
+    return $out;
+}
+
+/**
+ * Go — via PHProxy JSON API.
+ */
+function phproxy_cli_go_proxy(string $api_url, string $upstream, string $method, array $headers, array $cookies, string $body = ''): string
+{
+    $split = phproxy_cli_split_for_api($headers);
+    $hdr_lines = '';
+    foreach ($split['headers'] as $h) {
+        [$name, $value] = $h;
+        $hdr_lines .= '            ' . phproxy_snip_go($name) . ': ' . phproxy_snip_go($value) . ",\n";
+    }
+    $cookie_lines = '';
+    foreach ($split['cookies'] as $cn => $cv) {
+        $cookie_lines .= '            ' . phproxy_snip_go($cn) . ': ' . phproxy_snip_go($cv) . ",\n";
+    }
+    $body_field = $body !== '' ? '        "body":    ' . phproxy_snip_go($body) . ",\n" : '';
+    $method_field = $method !== 'GET' ? '        "method":  ' . phproxy_snip_go($method) . ",\n" : '';
+
+    $out  = "package main\n\n";
+    $out .= "import (\n";
+    $out .= "    \"bytes\"\n    \"encoding/json\"\n    \"fmt\"\n    \"net/http\"\n";
+    $out .= ")\n\n";
+    $out .= "func main() {\n";
+    $out .= "    payload := map[string]any{\n";
+    $out .= '        "url":     ' . phproxy_snip_go($upstream) . ",\n";
+    $out .= $method_field;
+    if ($hdr_lines !== '') {
+        $out .= "        \"headers\": map[string]string{\n";
+        $out .= $hdr_lines;
+        $out .= "        },\n";
+    }
+    if ($cookie_lines !== '') {
+        $out .= "        \"cookies\": map[string]string{\n";
+        $out .= $cookie_lines;
+        $out .= "        },\n";
+    }
+    $out .= $body_field;
+    $out .= "    }\n";
+    $out .= "    j, _ := json.Marshal(payload)\n";
+    $out .= '    resp, err := http.Post(' . phproxy_snip_go($api_url) . ', "application/json", bytes.NewReader(j))' . "\n";
+    $out .= "    if err != nil { panic(err) }\n";
+    $out .= "    defer resp.Body.Close()\n\n";
+    $out .= "    var envelope struct{ Status int `json:\"status\"`; Body string `json:\"body\"` }\n";
+    $out .= "    json.NewDecoder(resp.Body).Decode(&envelope)\n";
+    $out .= "    fmt.Println(envelope.Status, envelope.Body)\n";
     $out .= "}";
     return $out;
 }
@@ -4875,10 +5122,28 @@ function phproxy_panel_css(): string {
 #phproxy-panel #cli-tab-go:checked     ~ .cli-panel[data-cli="go"] {
     display: block;
 }
+#phproxy-panel .cli-variant         { margin-bottom: 16px; }
+#phproxy-panel .cli-variant:last-child { margin-bottom: 0; }
 #phproxy-panel .cli-toolbar {
     display: flex;
-    justify-content: flex-end;
-    margin-bottom: 8px;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+#phproxy-panel .cli-variant-label {
+    color: var(--text-muted);
+    font: 600 11px var(--font);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+#phproxy-panel .cli-variant-label code {
+    background: var(--surface-2);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font: 11px var(--font-mono);
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--text);
 }
 #phproxy-panel .cli-toolbar .button-cancel { padding: 6px 12px; font-size: 12px; }
 #phproxy-panel .cli-snippet {
