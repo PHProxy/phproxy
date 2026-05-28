@@ -48,6 +48,160 @@ if (isset($_GET['asset'])) {
 //     "verify_ssl":       true,
 //     "return":           "json" | "raw"         (default: json)
 //   }
+// Helper used by the new network-check APIs (dns / portcheck / cert).
+$phproxy_api_validate_host = function (string $host): bool {
+    if ($host === '' || strlen($host) > 253) return false;
+    if (!preg_match('/^[a-zA-Z0-9._:-]+$/', $host)) return false;
+    $block = '#^127\.|192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|^localhost$|^::1$|^0+\.0+\.0+\.0+$#i';
+    if (preg_match($block, $host)) return false;
+    return true;
+};
+
+// --- DNS LOOKUP API (?api=dns&host=example.com&type=A) -----------------
+if (isset($_GET['api']) && $_GET['api'] === 'dns') {
+    header('Content-Type: application/json; charset=utf-8');
+    $host = (string) ($_GET['host'] ?? '');
+    $type = strtoupper((string) ($_GET['type'] ?? 'A'));
+    if (!$phproxy_api_validate_host($host)) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Invalid or blacklisted host']);
+        exit;
+    }
+    $types = [
+        'A'     => DNS_A,     'AAAA'  => DNS_AAAA, 'MX'    => DNS_MX,
+        'TXT'   => DNS_TXT,   'NS'    => DNS_NS,   'SOA'   => DNS_SOA,
+        'CAA'   => DNS_CAA,   'CNAME' => DNS_CNAME,'PTR'   => DNS_PTR,
+        'SRV'   => DNS_SRV,   'ANY'   => DNS_ANY,
+    ];
+    if (!isset($types[$type])) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Unknown record type', 'supported' => array_keys($types)]);
+        exit;
+    }
+    $started = microtime(true);
+    $records = @dns_get_record($host, $types[$type]);
+    $ms      = (int) ((microtime(true) - $started) * 1000);
+    if ($records === false) {
+        echo json_encode(['ok' => false, 'host' => $host, 'type' => $type, 'error' => 'Lookup failed', 'duration_ms' => $ms]);
+        exit;
+    }
+    echo json_encode(['ok' => true, 'host' => $host, 'type' => $type, 'records' => $records, 'duration_ms' => $ms], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+    exit;
+}
+
+// --- PORT CHECK API (?api=portcheck&host=example.com&port=443) ---------
+if (isset($_GET['api']) && $_GET['api'] === 'portcheck') {
+    header('Content-Type: application/json; charset=utf-8');
+    $host = (string) ($_GET['host'] ?? '');
+    $port = (int)    ($_GET['port'] ?? 0);
+    if (!$phproxy_api_validate_host($host)) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Invalid or blacklisted host']);
+        exit;
+    }
+    if ($port < 1 || $port > 65535) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Invalid port (1–65535)']);
+        exit;
+    }
+    $started = microtime(true);
+    $sock    = @stream_socket_client("tcp://$host:$port", $errno, $errstr, 5);
+    $ms      = (int) ((microtime(true) - $started) * 1000);
+    if ($sock === false) {
+        echo json_encode(['ok' => true, 'host' => $host, 'port' => $port, 'reachable' => false, 'error' => $errstr, 'errno' => (int) $errno, 'latency_ms' => $ms]);
+        exit;
+    }
+    fclose($sock);
+    echo json_encode(['ok' => true, 'host' => $host, 'port' => $port, 'reachable' => true, 'latency_ms' => $ms]);
+    exit;
+}
+
+// --- SSL CERT INSPECTOR API (?api=cert&host=example.com&port=443) ------
+if (isset($_GET['api']) && $_GET['api'] === 'cert') {
+    header('Content-Type: application/json; charset=utf-8');
+    $host = (string) ($_GET['host'] ?? '');
+    $port = (int)    ($_GET['port'] ?? 443);
+    if (!$phproxy_api_validate_host($host)) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Invalid or blacklisted host']);
+        exit;
+    }
+    if ($port < 1 || $port > 65535) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Invalid port (1–65535)']);
+        exit;
+    }
+    $ctx = stream_context_create([
+        'ssl' => [
+            'capture_peer_cert'       => true,
+            'capture_peer_cert_chain' => true,
+            'verify_peer'             => false,  // we want to inspect even broken / expired certs
+            'verify_peer_name'        => false,
+            'SNI_enabled'             => true,
+            'peer_name'               => $host,
+        ],
+    ]);
+    $started = microtime(true);
+    $sock    = @stream_socket_client("ssl://$host:$port", $errno, $errstr, 10, STREAM_CLIENT_CONNECT, $ctx);
+    $ms      = (int) ((microtime(true) - $started) * 1000);
+    if ($sock === false) {
+        echo json_encode(['ok' => false, 'host' => $host, 'port' => $port, 'error' => $errstr ?: 'SSL handshake failed', 'errno' => (int) $errno, 'latency_ms' => $ms]);
+        exit;
+    }
+    $params = stream_context_get_params($sock);
+    fclose($sock);
+    $leaf  = $params['options']['ssl']['peer_certificate']       ?? null;
+    $chain = $params['options']['ssl']['peer_certificate_chain'] ?? [];
+    if (!$leaf) {
+        echo json_encode(['ok' => false, 'host' => $host, 'port' => $port, 'error' => 'No peer certificate received']);
+        exit;
+    }
+    $parse_cert = function ($cert) {
+        $p = @openssl_x509_parse($cert);
+        if (!is_array($p)) return null;
+        $san = [];
+        if (!empty($p['extensions']['subjectAltName'])) {
+            foreach (explode(',', $p['extensions']['subjectAltName']) as $entry) {
+                $entry = trim($entry);
+                if (str_starts_with($entry, 'DNS:'))    $san[] = substr($entry, 4);
+                elseif (str_starts_with($entry, 'IP Address:')) $san[] = substr($entry, 11);
+                elseif ($entry !== '')                  $san[] = $entry;
+            }
+        }
+        $valid_from = $p['validFrom_time_t'] ?? 0;
+        $valid_to   = $p['validTo_time_t']   ?? 0;
+        return [
+            'subject'       => $p['name'] ?? '',
+            'subject_cn'    => $p['subject']['CN']     ?? '',
+            'subject_org'   => $p['subject']['O']      ?? '',
+            'issuer_cn'     => $p['issuer']['CN']      ?? '',
+            'issuer_org'    => $p['issuer']['O']       ?? '',
+            'serial'        => $p['serialNumberHex']   ?? ($p['serialNumber'] ?? ''),
+            'valid_from'    => $valid_from ? gmdate('Y-m-d\TH:i:s\Z', $valid_from) : '',
+            'valid_to'      => $valid_to   ? gmdate('Y-m-d\TH:i:s\Z', $valid_to)   : '',
+            'days_left'     => $valid_to ? (int) floor(($valid_to - time()) / 86400) : 0,
+            'san'           => $san,
+            'sig_algorithm' => $p['signatureTypeSN'] ?? '',
+        ];
+    };
+    $cert_info  = $parse_cert($leaf);
+    $chain_info = [];
+    foreach ($chain as $c) {
+        $ci = $parse_cert($c);
+        if ($ci !== null) $chain_info[] = $ci;
+    }
+    echo json_encode([
+        'ok'           => true,
+        'host'         => $host,
+        'port'         => $port,
+        'leaf'         => $cert_info,
+        'chain'        => $chain_info,
+        'chain_length' => count($chain_info),
+        'duration_ms'  => $ms,
+    ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+    exit;
+}
+
 if (isset($_GET['api']) && $_GET['api'] === 'fetch') {
     // Helper for any JSON error response in this dispatcher
     $api_json_err = function (int $status, string $msg, array $extra = []): void {
@@ -2692,6 +2846,50 @@ if (!isset($_valid_tabs[$_active_tab])) $_active_tab = 'options';
     </header>
 
 <?php if ($data['category'] != 'auth'): ?>
+    <div class="netcheck-row">
+        <form class="card netcheck" data-netcheck="portcheck" autocomplete="off">
+            <div class="netcheck-title">Port Check</div>
+            <div class="netcheck-sub">TCP reachability + latency</div>
+            <div class="netcheck-fields">
+                <input type="text" name="host" placeholder="host.example.com" required spellcheck="false" autocapitalize="off"/>
+                <input type="number" name="port" placeholder="443" min="1" max="65535" required/>
+            </div>
+            <button class="button-submit" type="submit">Check</button>
+            <pre class="netcheck-result" hidden></pre>
+        </form>
+        <form class="card netcheck" data-netcheck="dns" autocomplete="off">
+            <div class="netcheck-title">DNS Check</div>
+            <div class="netcheck-sub">Resolve A / AAAA / MX / TXT / NS / CAA / …</div>
+            <div class="netcheck-fields">
+                <input type="text" name="host" placeholder="example.com" required spellcheck="false" autocapitalize="off"/>
+                <select name="type">
+                    <option value="A">A</option>
+                    <option value="AAAA">AAAA</option>
+                    <option value="MX">MX</option>
+                    <option value="TXT">TXT</option>
+                    <option value="NS">NS</option>
+                    <option value="SOA">SOA</option>
+                    <option value="CAA">CAA</option>
+                    <option value="CNAME">CNAME</option>
+                    <option value="SRV">SRV</option>
+                    <option value="ANY">ANY</option>
+                </select>
+            </div>
+            <button class="button-submit" type="submit">Lookup</button>
+            <pre class="netcheck-result" hidden></pre>
+        </form>
+        <form class="card netcheck" data-netcheck="cert" autocomplete="off">
+            <div class="netcheck-title">SSL Check</div>
+            <div class="netcheck-sub">Inspect leaf certificate + chain</div>
+            <div class="netcheck-fields">
+                <input type="text" name="host" placeholder="example.com" required spellcheck="false" autocapitalize="off"/>
+                <input type="number" name="port" placeholder="443" min="1" max="65535" value="443" required/>
+            </div>
+            <button class="button-submit" type="submit">Inspect</button>
+            <pre class="netcheck-result" hidden></pre>
+        </form>
+    </div>
+
     <form id="proxy-main-form" method="post" action="<?php echo htmlspecialchars($_SERVER['PHP_SELF']); ?>">
         <div class="card">
             <div class="form-row url-row">
@@ -2828,6 +3026,111 @@ phproxy_render_panel_tabs(
             }
         });
     }
+
+    // Network-check cards (Port / DNS / SSL) — fetch the API and render
+    function fmtPortcheck(j) {
+        if (j.reachable) {
+            return 'OPEN  ' + j.host + ':' + j.port + '\nlatency: ' + j.latency_ms + ' ms';
+        }
+        return 'CLOSED  ' + j.host + ':' + j.port +
+               '\nerror: ' + (j.error || 'unreachable') +
+               (j.errno ? ' (errno ' + j.errno + ')' : '') +
+               '\nlatency: ' + (j.latency_ms || 0) + ' ms';
+    }
+    function fmtDns(j) {
+        if (!j.records || !j.records.length) {
+            return 'No ' + j.type + ' records for ' + j.host + '  (' + j.duration_ms + ' ms)';
+        }
+        var lines = [j.host + '  ' + j.type + '  ' + j.records.length + ' record(s)  (' + j.duration_ms + ' ms)', ''];
+        j.records.forEach(function (r) {
+            var key = r.type || j.type;
+            var val = '';
+            if (r.ip)          val = r.ip;
+            else if (r.ipv6)   val = r.ipv6;
+            else if (r.target) val = r.target + (r.pri != null ? '  (pri ' + r.pri + ')' : '');
+            else if (r.txt)    val = r.txt;
+            else if (r.value)  val = r.value;
+            else if (r.mname)  val = r.mname + ' / ' + (r.rname || '') + ' (serial ' + (r.serial || '') + ')';
+            else if (r.tag)    val = r.tag + ' "' + (r.value || '') + '"';
+            else               val = JSON.stringify(r);
+            lines.push(key + '  ' + val + (r.ttl != null ? '   ttl ' + r.ttl : ''));
+        });
+        return lines.join('\n');
+    }
+    function fmtCert(j) {
+        var L = j.leaf || {};
+        var days = L.days_left;
+        var status = days < 0 ? 'EXPIRED ' + Math.abs(days) + 'd ago'
+                   : days < 30 ? 'expires in ' + days + 'd (warning)'
+                   : 'expires in ' + days + 'd';
+        var lines = [
+            j.host + ':' + j.port + '   (' + (j.duration_ms || 0) + ' ms)',
+            '',
+            'subject:    ' + (L.subject_cn || '(none)') + (L.subject_org ? '  /  ' + L.subject_org : ''),
+            'issuer:     ' + (L.issuer_cn || '(none)')  + (L.issuer_org  ? '  /  ' + L.issuer_org  : ''),
+            'valid:      ' + (L.valid_from || '?') + '  →  ' + (L.valid_to || '?'),
+            'status:     ' + status,
+            'sig algo:   ' + (L.sig_algorithm || '?'),
+        ];
+        if (L.san && L.san.length) {
+            lines.push('SAN:        ' + L.san.slice(0, 12).join(', ') + (L.san.length > 12 ? ' …(+' + (L.san.length - 12) + ')' : ''));
+        }
+        if (j.chain_length) {
+            lines.push('');
+            lines.push('chain (' + j.chain_length + '):');
+            (j.chain || []).forEach(function (c, i) {
+                lines.push('  ' + i + '. ' + (c.subject_cn || c.subject || '?') + '   ←  ' + (c.issuer_cn || '?'));
+            });
+        }
+        return lines.join('\n');
+    }
+    function bindNetcheck(form) {
+        var kind = form.getAttribute('data-netcheck');
+        var out  = form.querySelector('.netcheck-result');
+        var btn  = form.querySelector('button[type="submit"]');
+        form.addEventListener('submit', function (ev) {
+            ev.preventDefault();
+            var fd = new FormData(form);
+            var params = new URLSearchParams();
+            params.set('api', kind);
+            fd.forEach(function (v, k) { params.set(k, v); });
+            out.hidden = false;
+            out.className = 'netcheck-result busy';
+            out.textContent = 'Running…';
+            btn.disabled = true;
+            fetch('?' + params.toString(), { headers: { 'Accept': 'application/json' } })
+                .then(function (r) { return r.json().then(function (j) { return { http: r.status, j: j }; }); })
+                .then(function (res) {
+                    var j = res.j || {};
+                    if (j.ok === false) {
+                        out.className = 'netcheck-result err';
+                        out.textContent = 'ERROR  ' + (j.error || 'request failed') +
+                                          (j.host ? '\nhost: ' + j.host : '');
+                        return;
+                    }
+                    if (kind === 'portcheck') {
+                        out.className = 'netcheck-result ' + (j.reachable ? 'ok' : 'warn');
+                        out.textContent = fmtPortcheck(j);
+                    } else if (kind === 'dns') {
+                        out.className = 'netcheck-result ' + (j.records && j.records.length ? 'ok' : 'warn');
+                        out.textContent = fmtDns(j);
+                    } else if (kind === 'cert') {
+                        var d = j.leaf && j.leaf.days_left;
+                        out.className = 'netcheck-result ' + (d != null && d < 0 ? 'err' : (d != null && d < 30 ? 'warn' : 'ok'));
+                        out.textContent = fmtCert(j);
+                    } else {
+                        out.className = 'netcheck-result ok';
+                        out.textContent = JSON.stringify(j, null, 2);
+                    }
+                })
+                .catch(function (e) {
+                    out.className = 'netcheck-result err';
+                    out.textContent = 'Network error: ' + (e && e.message ? e.message : e);
+                })
+                .finally(function () { btn.disabled = false; });
+        });
+    }
+    document.querySelectorAll('form[data-netcheck]').forEach(bindNetcheck);
 })();
 </script>
 </body>
@@ -4690,6 +4993,77 @@ p.info { background: var(--success-soft); color: var(--text); border-left: 3px s
 
 .ua-picker select { padding: 9px 12px; }
 
+.netcheck-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.netcheck.card {
+    margin-bottom: 0;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+}
+
+.netcheck-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 2px;
+}
+
+.netcheck-sub {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+}
+
+.netcheck-fields {
+    display: grid;
+    grid-template-columns: 1fr 90px;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.netcheck[data-netcheck="dns"] .netcheck-fields {
+    grid-template-columns: 1fr 110px;
+}
+
+.netcheck-fields input,
+.netcheck-fields select {
+    padding: 8px 10px;
+    font-size: 13px;
+}
+
+.netcheck .button-submit {
+    width: 100%;
+    padding: 8px 10px;
+    font-size: 13px;
+}
+
+.netcheck-result {
+    margin: 10px 0 0 0;
+    padding: 10px 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.45;
+    max-height: 240px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.netcheck-result.ok    { border-color: var(--success); background: var(--success-soft); }
+.netcheck-result.err   { border-color: var(--danger);  background: var(--danger-soft);  }
+.netcheck-result.warn  { border-color: var(--warning); background: var(--warning-soft); }
+.netcheck-result.busy  { color: var(--text-muted); font-style: italic; }
+
 .footer {
     margin: 24px 0;
     text-align: center;
@@ -4703,6 +5077,10 @@ p.info { background: var(--success-soft); color: var(--text); border-left: 3px s
 }
 
 .footer a:hover { color: var(--accent); }
+
+@media (max-width: 880px) {
+    .netcheck-row { grid-template-columns: 1fr; }
+}
 
 @media (max-width: 600px) {
     .page { margin: 16px auto; padding: 0 12px; }
