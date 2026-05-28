@@ -117,6 +117,56 @@ if (isset($_GET['api']) && $_GET['api'] === 'portcheck') {
         echo json_encode(['ok' => false, 'error' => 'Too many ports requested (max 128)', 'requested' => count($ports)]);
         exit;
     }
+
+    // Streaming mode: emit NDJSON — one event per line, flushed immediately,
+    // so the UI can show partial progress as each port comes back. Triggered
+    // by ?stream=1. Default remains the batched JSON envelope so existing
+    // CLI consumers don't break.
+    $stream = !empty($_GET['stream']);
+    if ($stream) {
+        while (ob_get_level() > 0) @ob_end_clean();
+        @ob_implicit_flush(true);
+        header('Content-Type: application/x-ndjson; charset=utf-8');
+        header('X-Accel-Buffering: no');   // nginx hint
+        header('Cache-Control: no-cache, no-store');
+        $emit = function (array $obj): void {
+            echo json_encode($obj, JSON_UNESCAPED_SLASHES), "\n";
+            @flush();
+        };
+        $emit([
+            'event'     => 'start',
+            'host'      => $host,
+            'port_spec' => $port_spec,
+            'count'     => count($ports),
+            'ports'     => $ports,
+            'timeout_s' => $timeout,
+        ]);
+        $scan_started = microtime(true);
+        $open = $closed = 0;
+        foreach ($ports as $p) {
+            if (connection_aborted()) break;
+            $t0   = microtime(true);
+            $sock = @stream_socket_client("tcp://$host:$p", $errno, $errstr, $timeout);
+            $ms   = (int) ((microtime(true) - $t0) * 1000);
+            if ($sock === false) {
+                $closed++;
+                $emit(['event' => 'result', 'port' => $p, 'reachable' => false, 'error' => $errstr ?: 'connect failed', 'errno' => (int) $errno, 'latency_ms' => $ms]);
+            } else {
+                fclose($sock);
+                $open++;
+                $emit(['event' => 'result', 'port' => $p, 'reachable' => true, 'latency_ms' => $ms]);
+            }
+        }
+        $emit([
+            'event'       => 'end',
+            'open'        => $open,
+            'closed'      => $closed,
+            'duration_ms' => (int) ((microtime(true) - $scan_started) * 1000),
+        ]);
+        exit;
+    }
+
+    // Batched mode (default) — one JSON envelope at the end.
     $scan_started = microtime(true);
     $results = [];
     foreach ($ports as $p) {
@@ -2832,43 +2882,49 @@ CSS;
             .     "});"
             .   "});"
             .   "var nbase=" . json_encode($_script_base, JSON_UNESCAPED_SLASHES) . ";"
+            .   "function renderPort(out,s){var L=[s.host+'   '+s.results.length+'/'+s.count+' port'+(s.count===1?'':'s')+'   open: '+s.open+'   closed: '+s.closed+(s.done?'   ('+(s.duration_ms||0)+' ms)':'   …scanning'),''];"
+            .     "s.results.forEach(function(r){var ps=String(r.port);while(ps.length<s.maxPort)ps=' '+ps;L.push(ps+(r.reachable?'  OPEN    '+r.latency_ms+' ms':'  CLOSED  '+(r.error||'unreachable')+'   '+(r.latency_ms||0)+' ms'));});"
+            .     "out.textContent=L.join('\\n');}"
+            .   "async function streamPort(f,out){var fd=new FormData(f),p=new URLSearchParams();p.set('api','portcheck');p.set('stream','1');fd.forEach(function(v,k){p.set(k,v);});"
+            .     "out.hidden=false;out.className='netcheck-result busy';out.textContent='Connecting…';"
+            .     "var resp=await fetch(nbase+'?'+p.toString(),{headers:{'Accept':'application/x-ndjson'}});"
+            .     "if(!resp.ok){var m='HTTP '+resp.status;try{var j=await resp.json();if(j&&j.error)m='ERROR  '+j.error;}catch(e){}out.className='netcheck-result err';out.textContent=m;return;}"
+            .     "var rdr=resp.body.getReader(),dec=new TextDecoder(),buf='';"
+            .     "var s={host:'',count:0,open:0,closed:0,results:[],maxPort:0,done:false,duration_ms:0};"
+            .     "while(true){var c=await rdr.read();if(c.done)break;buf+=dec.decode(c.value,{stream:true});var n;"
+            .       "while((n=buf.indexOf('\\n'))>=0){var ln=buf.slice(0,n);buf=buf.slice(n+1);if(!ln.trim())continue;var e;try{e=JSON.parse(ln);}catch(x){continue;}"
+            .         "if(e.event==='start'){s.host=e.host;s.count=e.count;(e.ports||[]).forEach(function(pp){var l=String(pp).length;if(l>s.maxPort)s.maxPort=l;});renderPort(out,s);}"
+            .         "else if(e.event==='result'){s.results.push(e);if(e.reachable)s.open++;else s.closed++;renderPort(out,s);}"
+            .         "else if(e.event==='end'){s.done=true;s.duration_ms=e.duration_ms;var ao=s.open>0,ac=s.closed>0;out.className='netcheck-result '+(ao&&!ac?'ok':(ao?'warn':'err'));renderPort(out,s);}"
+            .       "}"
+            .     "}}"
             .   "document.querySelectorAll('form[data-netcheck]').forEach(function(f){"
             .     "var kind=f.getAttribute('data-netcheck');"
             .     "var out=f.querySelector('.netcheck-result');"
             .     "var btn=f.querySelector('button[type=\"submit\"]');"
-            .     "f.addEventListener('submit',function(ev){"
-            .       "ev.preventDefault();"
-            .       "var fd=new FormData(f),p=new URLSearchParams();p.set('api',kind);"
-            .       "fd.forEach(function(v,k){p.set(k,v);});"
-            .       "out.hidden=false;out.className='netcheck-result busy';out.textContent='Running…';btn.disabled=true;"
-            .       "fetch(nbase+'?'+p.toString(),{headers:{'Accept':'application/json'}})"
-            .         ".then(function(r){return r.json();})"
-            .         ".then(function(j){"
-            .           "if(j.ok===false){out.className='netcheck-result err';out.textContent='ERROR  '+(j.error||'request failed')+(j.host?'\\nhost: '+j.host:'');return;}"
-            .           "if(kind==='portcheck'){"
-            .             "var rs=j.results||[],ao=(j.open||0)>0,ac=(j.closed||0)>0;"
-            .             "out.className='netcheck-result '+(ao&&!ac?'ok':(ao?'warn':'err'));"
-            .             "var mp=0;rs.forEach(function(r){if(String(r.port).length>mp)mp=String(r.port).length;});"
-            .             "var L=[j.host+'   '+j.count+' port'+(j.count===1?'':'s')+'   open: '+j.open+'   closed: '+j.closed+'   ('+(j.duration_ms||0)+' ms)',''];"
-            .             "rs.forEach(function(r){var ps=String(r.port);while(ps.length<mp)ps=' '+ps;L.push(ps+(r.reachable?'  OPEN    '+r.latency_ms+' ms':'  CLOSED  '+(r.error||'unreachable')+'   '+(r.latency_ms||0)+' ms'));});"
-            .             "out.textContent=L.join('\\n');"
-            .           "}"
-            .           "else if(kind==='dns'){"
-            .             "if(!j.records||!j.records.length){out.className='netcheck-result warn';out.textContent='No '+j.type+' records for '+j.host+'  ('+j.duration_ms+' ms)';return;}"
-            .             "var L=[j.host+'  '+j.type+'  '+j.records.length+' record(s)  ('+j.duration_ms+' ms)',''];"
-            .             "j.records.forEach(function(r){var k=r.type||j.type,v=r.ip||r.ipv6||r.target||r.txt||r.value||r.mname||(r.tag?r.tag+' \"'+r.value+'\"':JSON.stringify(r));L.push(k+'  '+v+(r.ttl!=null?'   ttl '+r.ttl:''));});"
-            .             "out.className='netcheck-result ok';out.textContent=L.join('\\n');"
-            .           "}"
-            .           "else if(kind==='cert'){"
-            .             "var x=j.leaf||{},d=x.days_left,st=d<0?'EXPIRED '+Math.abs(d)+'d ago':(d<30?'expires in '+d+'d (warning)':'expires in '+d+'d');"
-            .             "var L=[j.host+':'+j.port+'   ('+(j.duration_ms||0)+' ms)','','subject:    '+(x.subject_cn||'(none)'),'issuer:     '+(x.issuer_cn||'(none)'),'valid:      '+(x.valid_from||'?')+'  →  '+(x.valid_to||'?'),'status:     '+st,'sig algo:   '+(x.sig_algorithm||'?')];"
-            .             "if(x.san&&x.san.length)L.push('SAN:        '+x.san.slice(0,12).join(', '));"
-            .             "if(j.chain_length){L.push('','chain ('+j.chain_length+'):');(j.chain||[]).forEach(function(c,i){L.push('  '+i+'. '+(c.subject_cn||'?')+'   ←  '+(c.issuer_cn||'?'));});}"
-            .             "out.className='netcheck-result '+(d!=null&&d<0?'err':(d!=null&&d<30?'warn':'ok'));out.textContent=L.join('\\n');"
-            .           "}"
-            .         "})"
-            .         ".catch(function(e){out.className='netcheck-result err';out.textContent='Network error: '+(e&&e.message?e.message:e);})"
-            .         ".finally(function(){btn.disabled=false;});"
+            .     "f.addEventListener('submit',async function(ev){"
+            .       "ev.preventDefault();btn.disabled=true;"
+            .       "try{"
+            .         "if(kind==='portcheck'){await streamPort(f,out);return;}"
+            .         "var fd=new FormData(f),p=new URLSearchParams();p.set('api',kind);"
+            .         "fd.forEach(function(v,k){p.set(k,v);});"
+            .         "out.hidden=false;out.className='netcheck-result busy';out.textContent='Running…';"
+            .         "var r=await fetch(nbase+'?'+p.toString(),{headers:{'Accept':'application/json'}});"
+            .         "var j=await r.json();"
+            .         "if(j.ok===false){out.className='netcheck-result err';out.textContent='ERROR  '+(j.error||'request failed')+(j.host?'\\nhost: '+j.host:'');return;}"
+            .         "if(kind==='dns'){"
+            .           "if(!j.records||!j.records.length){out.className='netcheck-result warn';out.textContent='No '+j.type+' records for '+j.host+'  ('+j.duration_ms+' ms)';return;}"
+            .           "var L=[j.host+'  '+j.type+'  '+j.records.length+' record(s)  ('+j.duration_ms+' ms)',''];"
+            .           "j.records.forEach(function(r){var k=r.type||j.type,v=r.ip||r.ipv6||r.target||r.txt||r.value||r.mname||(r.tag?r.tag+' \"'+r.value+'\"':JSON.stringify(r));L.push(k+'  '+v+(r.ttl!=null?'   ttl '+r.ttl:''));});"
+            .           "out.className='netcheck-result ok';out.textContent=L.join('\\n');"
+            .         "} else if(kind==='cert'){"
+            .           "var x=j.leaf||{},d=x.days_left,st=d<0?'EXPIRED '+Math.abs(d)+'d ago':(d<30?'expires in '+d+'d (warning)':'expires in '+d+'d');"
+            .           "var L=[j.host+':'+j.port+'   ('+(j.duration_ms||0)+' ms)','','subject:    '+(x.subject_cn||'(none)'),'issuer:     '+(x.issuer_cn||'(none)'),'valid:      '+(x.valid_from||'?')+'  →  '+(x.valid_to||'?'),'status:     '+st,'sig algo:   '+(x.sig_algorithm||'?')];"
+            .           "if(x.san&&x.san.length)L.push('SAN:        '+x.san.slice(0,12).join(', '));"
+            .           "if(j.chain_length){L.push('','chain ('+j.chain_length+'):');(j.chain||[]).forEach(function(c,i){L.push('  '+i+'. '+(c.subject_cn||'?')+'   ←  '+(c.issuer_cn||'?'));});}"
+            .           "out.className='netcheck-result '+(d!=null&&d<0?'err':(d!=null&&d<30?'warn':'ok'));out.textContent=L.join('\\n');"
+            .         "}"
+            .       "}catch(e){out.className='netcheck-result err';out.textContent='Network error: '+(e&&e.message?e.message:e);}finally{btn.disabled=false;}"
             .     "});"
             .   "});"
             . "})();</script>";
@@ -3089,6 +3145,30 @@ phproxy_render_panel_tabs(
         });
     }
 
+    // CLI tab — clipboard copy buttons (mirrors the inline-panel handler)
+    document.querySelectorAll('.cli-copy').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var t = document.getElementById(btn.dataset.target);
+            if (!t) return;
+            var text = t.textContent;
+            var done = function () {
+                var orig = btn.textContent;
+                btn.textContent = 'Copied!';
+                setTimeout(function () { btn.textContent = orig; }, 1500);
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(done, done);
+            } else {
+                var ta = document.createElement('textarea');
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                try { document.execCommand('copy'); done(); } catch (e) {}
+                document.body.removeChild(ta);
+            }
+        });
+    });
+
     // Network-check cards (Port / DNS / SSL) — fetch the API and render
     function fmtPortcheck(j) {
         var results = j.results || [];
@@ -3158,52 +3238,119 @@ phproxy_render_panel_tabs(
         }
         return lines.join('\n');
     }
+    // Render the port-check result panel from the current scan state.
+    function renderPortRunning(out, state) {
+        var lines = [
+            state.host + '   ' + state.results.length + '/' + state.count + ' port' + (state.count === 1 ? '' : 's') +
+            '   open: ' + state.open + '   closed: ' + state.closed +
+            (state.done ? '   (' + (state.duration_ms || 0) + ' ms)' : '   …scanning'),
+            '',
+        ];
+        state.results.forEach(function (r) {
+            var ps = String(r.port);
+            while (ps.length < state.maxPort) ps = ' ' + ps;
+            if (r.reachable) lines.push(ps + '  OPEN    ' + r.latency_ms + ' ms');
+            else             lines.push(ps + '  CLOSED  ' + (r.error || 'unreachable') + '   ' + (r.latency_ms || 0) + ' ms');
+        });
+        out.textContent = lines.join('\n');
+    }
+
+    // Streaming port-check via NDJSON. Updates the result pre on every line.
+    async function streamPortcheck(form, out) {
+        var fd = new FormData(form);
+        var params = new URLSearchParams();
+        params.set('api', 'portcheck');
+        params.set('stream', '1');
+        fd.forEach(function (v, k) { params.set(k, v); });
+        out.hidden = false;
+        out.className = 'netcheck-result busy';
+        out.textContent = 'Connecting…';
+        var resp = await fetch('?' + params.toString(), { headers: { 'Accept': 'application/x-ndjson' } });
+        if (!resp.ok) {
+            // Try to surface the JSON error envelope the dispatcher sends.
+            var msg = 'HTTP ' + resp.status;
+            try { var j = await resp.json(); if (j && j.error) msg = 'ERROR  ' + j.error; } catch (e) {}
+            out.className = 'netcheck-result err';
+            out.textContent = msg;
+            return;
+        }
+        var reader  = resp.body.getReader();
+        var decoder = new TextDecoder();
+        var buf = '';
+        var state = { host: '', count: 0, open: 0, closed: 0, results: [], maxPort: 0, done: false, duration_ms: 0 };
+        while (true) {
+            var chunk = await reader.read();
+            if (chunk.done) break;
+            buf += decoder.decode(chunk.value, { stream: true });
+            var nl;
+            while ((nl = buf.indexOf('\n')) >= 0) {
+                var line = buf.slice(0, nl); buf = buf.slice(nl + 1);
+                if (!line.trim()) continue;
+                var ev;
+                try { ev = JSON.parse(line); } catch (e) { continue; }
+                if (ev.event === 'start') {
+                    state.host  = ev.host;
+                    state.count = ev.count;
+                    (ev.ports || []).forEach(function (p) { var l = String(p).length; if (l > state.maxPort) state.maxPort = l; });
+                    renderPortRunning(out, state);
+                } else if (ev.event === 'result') {
+                    state.results.push(ev);
+                    if (ev.reachable) state.open++; else state.closed++;
+                    renderPortRunning(out, state);
+                } else if (ev.event === 'end') {
+                    state.done        = true;
+                    state.duration_ms = ev.duration_ms;
+                    var anyOpen = state.open > 0, anyClosed = state.closed > 0;
+                    out.className = 'netcheck-result ' + (anyOpen && !anyClosed ? 'ok' : (anyOpen ? 'warn' : 'err'));
+                    renderPortRunning(out, state);
+                }
+            }
+        }
+    }
+
     function bindNetcheck(form) {
         var kind = form.getAttribute('data-netcheck');
         var out  = form.querySelector('.netcheck-result');
         var btn  = form.querySelector('button[type="submit"]');
-        form.addEventListener('submit', function (ev) {
+        form.addEventListener('submit', async function (ev) {
             ev.preventDefault();
-            var fd = new FormData(form);
-            var params = new URLSearchParams();
-            params.set('api', kind);
-            fd.forEach(function (v, k) { params.set(k, v); });
-            out.hidden = false;
-            out.className = 'netcheck-result busy';
-            out.textContent = 'Running…';
             btn.disabled = true;
-            fetch('?' + params.toString(), { headers: { 'Accept': 'application/json' } })
-                .then(function (r) { return r.json().then(function (j) { return { http: r.status, j: j }; }); })
-                .then(function (res) {
-                    var j = res.j || {};
-                    if (j.ok === false) {
-                        out.className = 'netcheck-result err';
-                        out.textContent = 'ERROR  ' + (j.error || 'request failed') +
-                                          (j.host ? '\nhost: ' + j.host : '');
-                        return;
-                    }
-                    if (kind === 'portcheck') {
-                        var anyOpen = (j.open || 0) > 0;
-                        var anyClosed = (j.closed || 0) > 0;
-                        out.className = 'netcheck-result ' + (anyOpen && !anyClosed ? 'ok' : (anyOpen ? 'warn' : 'err'));
-                        out.textContent = fmtPortcheck(j);
-                    } else if (kind === 'dns') {
-                        out.className = 'netcheck-result ' + (j.records && j.records.length ? 'ok' : 'warn');
-                        out.textContent = fmtDns(j);
-                    } else if (kind === 'cert') {
-                        var d = j.leaf && j.leaf.days_left;
-                        out.className = 'netcheck-result ' + (d != null && d < 0 ? 'err' : (d != null && d < 30 ? 'warn' : 'ok'));
-                        out.textContent = fmtCert(j);
-                    } else {
-                        out.className = 'netcheck-result ok';
-                        out.textContent = JSON.stringify(j, null, 2);
-                    }
-                })
-                .catch(function (e) {
+            try {
+                if (kind === 'portcheck') {
+                    await streamPortcheck(form, out);
+                    return;
+                }
+                var fd = new FormData(form);
+                var params = new URLSearchParams();
+                params.set('api', kind);
+                fd.forEach(function (v, k) { params.set(k, v); });
+                out.hidden = false;
+                out.className = 'netcheck-result busy';
+                out.textContent = 'Running…';
+                var r = await fetch('?' + params.toString(), { headers: { 'Accept': 'application/json' } });
+                var j = await r.json();
+                if (j.ok === false) {
                     out.className = 'netcheck-result err';
-                    out.textContent = 'Network error: ' + (e && e.message ? e.message : e);
-                })
-                .finally(function () { btn.disabled = false; });
+                    out.textContent = 'ERROR  ' + (j.error || 'request failed') + (j.host ? '\nhost: ' + j.host : '');
+                    return;
+                }
+                if (kind === 'dns') {
+                    out.className = 'netcheck-result ' + (j.records && j.records.length ? 'ok' : 'warn');
+                    out.textContent = fmtDns(j);
+                } else if (kind === 'cert') {
+                    var d = j.leaf && j.leaf.days_left;
+                    out.className = 'netcheck-result ' + (d != null && d < 0 ? 'err' : (d != null && d < 30 ? 'warn' : 'ok'));
+                    out.textContent = fmtCert(j);
+                } else {
+                    out.className = 'netcheck-result ok';
+                    out.textContent = JSON.stringify(j, null, 2);
+                }
+            } catch (e) {
+                out.className = 'netcheck-result err';
+                out.textContent = 'Network error: ' + (e && e.message ? e.message : e);
+            } finally {
+                btn.disabled = false;
+            }
         });
     }
     document.querySelectorAll('form[data-netcheck]').forEach(bindNetcheck);
@@ -4171,12 +4318,15 @@ function phproxy_cli_checks_curl(string $base): string
     $u_port_list  = $base . '?api=portcheck&host=example.com&port=22,80,443,8000-8010';
     $u_dns        = $base . '?api=dns&host=example.com&type=A';
     $u_cert       = $base . '?api=cert&host=example.com&port=443';
+    $u_port_stream = $base . '?api=portcheck&host=example.com&port=22-30&stream=1';
     return "# Port check — single port\n"
          . 'curl ' . phproxy_snip_shell($u_port_one) . "\n\n"
          . "# Port check — inclusive range\n"
          . 'curl ' . phproxy_snip_shell($u_port_range) . "\n\n"
          . "# Port check — comma-list, mixed with ranges (max 128 ports)\n"
          . 'curl ' . phproxy_snip_shell($u_port_list) . "\n\n"
+         . "# Port check — streaming (NDJSON, one line per port as it completes)\n"
+         . 'curl -N ' . phproxy_snip_shell($u_port_stream) . "\n\n"
          . "# DNS lookup — A / AAAA / MX / TXT / NS / SOA / CAA / CNAME / SRV / ANY\n"
          . 'curl ' . phproxy_snip_shell($u_dns) . "\n\n"
          . "# SSL handshake + cert chain inspection\n"
@@ -5297,6 +5447,85 @@ p.info { background: var(--success-soft); color: var(--text); border-left: 3px s
 .netcheck-result.err   { border-color: var(--danger);  background: var(--danger-soft);  }
 .netcheck-result.warn  { border-color: var(--warning); background: var(--warning-soft); }
 .netcheck-result.busy  { color: var(--text-muted); font-style: italic; }
+
+/* CLI tab — base styles (entry page). The panel-scoped equivalents live
+   under #phproxy-panel so proxied-page injection doesn't leak rules to
+   the host document. */
+.cli-wrap > input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+.cli-tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+.cli-tabs label {
+    padding: 6px 12px;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 500;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    cursor: pointer;
+    transition: color .15s, border-color .15s;
+}
+.cli-tabs label:hover { color: var(--text); }
+#cli-tab-curl:checked   ~ .cli-tabs label[for="cli-tab-curl"],
+#cli-tab-php:checked    ~ .cli-tabs label[for="cli-tab-php"],
+#cli-tab-python:checked ~ .cli-tabs label[for="cli-tab-python"],
+#cli-tab-js:checked     ~ .cli-tabs label[for="cli-tab-js"],
+#cli-tab-go:checked     ~ .cli-tabs label[for="cli-tab-go"] {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+.cli-panel { display: none; }
+#cli-tab-curl:checked   ~ .cli-panel[data-cli="curl"],
+#cli-tab-php:checked    ~ .cli-panel[data-cli="php"],
+#cli-tab-python:checked ~ .cli-panel[data-cli="python"],
+#cli-tab-js:checked     ~ .cli-panel[data-cli="js"],
+#cli-tab-go:checked     ~ .cli-panel[data-cli="go"] {
+    display: block;
+}
+.cli-variant            { margin-bottom: 16px; }
+.cli-variant:last-child { margin-bottom: 0; }
+.cli-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+.cli-variant-label {
+    color: var(--text-muted);
+    font: 600 11px var(--font);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+.cli-variant-label code {
+    background: var(--surface-2);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font: 11px var(--font-mono);
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--text);
+}
+.cli-toolbar .button-cancel { padding: 6px 12px; font-size: 12px; }
+.cli-snippet {
+    margin: 0;
+    padding: 14px 16px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font: 12.5px/1.55 var(--font-mono);
+    color: var(--text);
+    overflow-x: auto;
+    white-space: pre;
+    -webkit-text-size-adjust: 100%;
+}
 
 .footer {
     margin: 24px 0;
