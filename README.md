@@ -156,6 +156,114 @@ now** button for immediate re-keying.
 If you also want to hide the client `User-Agent`, set it to `-` in the
 Headers tab — no `User-Agent` header gets forwarded.
 
+## JSON API (`?api=fetch`)
+
+POST a JSON envelope to `index.php?api=fetch` and the proxy makes the
+HTTP request for you, then returns either a JSON envelope (default) or
+the raw upstream response. No cookies, no flag bitfield, no encryption —
+just an HTTP fetch on your behalf, driven entirely by the JSON body.
+
+```sh
+curl -X POST 'https://proxy.example/index.php?api=fetch' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "url": "https://api.github.com/repos/PHProxy/phproxy",
+    "headers": { "Accept": "application/json", "User-Agent": "MyClient/1.0" },
+    "cookies": { "session": "abc123" }
+  }'
+```
+
+### Request body
+
+| Field | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `url` | string | — | **Required.** `http://` or `https://`. |
+| `method` | string | `GET` | Any HTTP verb. POST / PUT / PATCH / DELETE may carry a body. |
+| `headers` | object | `{}` | Map of `Name: value` to forward. Name must match `[A-Za-z0-9-]+`. CRLF-injection is filtered. `Host`, `Connection`, `Content-Length` are set by the proxy and not overridable. |
+| `cookies` | object | `{}` | Map of cookie name → value. Sent as a single `Cookie:` header. |
+| `body` | string | `""` | Request body. Only attached for POST / PUT / PATCH / DELETE. If you don't set `Content-Type`, `application/octet-stream` is assumed. |
+| `timeout` | int | `30` | Seconds. Clamped to `[1, 120]`. |
+| `follow_redirects` | bool | `false` | When `true`, the proxy follows 3xx Location headers. |
+| `max_redirects` | int | `5` | Clamped to `[0, 10]`. |
+| `verify_ssl` | bool | `true` | Set `false` to accept self-signed / mismatched certs (use with care). |
+| `return` | string | `json` | `json` returns a structured envelope, `raw` streams the upstream response verbatim. |
+
+### JSON response
+
+```json
+{
+  "ok": true,
+  "url": "http://example.com/",
+  "status": 200,
+  "status_text": "OK",
+  "headers": {
+    "Date": "Thu, 28 May 2026 04:38:33 GMT",
+    "Content-Type": "text/html",
+    "Server": "cloudflare"
+  },
+  "set_cookies": [
+    { "name": "sid", "value": "abc", "domain": ".example.com", "path": "/",
+      "expires": "", "max_age": null, "secure": true, "httponly": true,
+      "samesite": "Lax" }
+  ],
+  "redirects": [
+    { "from": "...", "status": 302, "to": "..." }
+  ],
+  "body": "<!doctype html>…",
+  "body_encoding": "utf8",
+  "duration_ms": 61
+}
+```
+
+- `body` is the upstream response body. If it's valid UTF-8 (HTML, JSON,
+  text, etc.), `body_encoding` is `"utf8"` and the bytes go directly into
+  the JSON string. If it's binary (images, PDFs, octet streams),
+  `body_encoding` is `"base64"` and `body` holds a Base64 string.
+- `redirects` is the chain of 3xx hops when `follow_redirects` was set.
+- Chunked transfer-encoding and `gzip`/`deflate` content-encoding are
+  decoded automatically.
+
+### Raw mode
+
+`"return": "raw"` makes the proxy emit the upstream response verbatim —
+the status code, the original `Content-Type`, the original body. Useful
+for downloading binary files through the proxy without Base64
+round-tripping:
+
+```sh
+curl -X POST 'https://proxy.example/index.php?api=fetch' \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://example.com/img.png","return":"raw"}' \
+  -o img.png
+```
+
+### Errors
+
+Errors come back as JSON with `"ok": false`:
+
+```json
+{"ok": false, "error": "Target host blacklisted or unparseable", "host": "127.0.0.1"}
+{"ok": false, "error": "Connection timed out", "url": "..."}
+{"ok": false, "error": "Too many redirects", "url": "...", "redirects": [...]}
+```
+
+| HTTP status | Cause |
+| --- | --- |
+| `400` | Missing `url`, target host blacklisted, malformed JSON |
+| `405` | Non-POST request |
+| `200` | Always — including for upstream 4xx/5xx; check `status` in the envelope |
+
+### Security notes
+
+- The same SSRF guard the browser flow uses applies: requests to
+  `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`,
+  `localhost`, and `::1` are rejected.
+- Header names are restricted to `[A-Za-z0-9-]+` and CRLF in values is
+  stripped to prevent request smuggling.
+- No authentication is built in — if you expose this publicly, put it
+  behind your own auth layer (HTTP basic, an API key check at the top of
+  the script, IP allowlist, …) or you've just shipped an open proxy.
+
 ## Configuration
 
 All options are toggleable per-session via the inline panel (gear icon in

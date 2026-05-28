@@ -31,6 +31,80 @@ if (isset($_GET['asset'])) {
     exit;
 }
 
+// --- JSON API DISPATCHER (?api=fetch) -----------------------------------
+// POST with a JSON body — proxy makes the HTTP request and returns either
+// JSON (default) or the raw upstream response.
+//
+// Body schema:
+//   {
+//     "url":              "https://example.com/" (required),
+//     "method":           "GET" | "POST" | ...   (default: GET),
+//     "headers":          { "Name": "value", ... },
+//     "cookies":          { "name": "value", ... },
+//     "body":             "string",
+//     "timeout":          30,
+//     "follow_redirects": false,
+//     "max_redirects":    5,
+//     "verify_ssl":       true,
+//     "return":           "json" | "raw"         (default: json)
+//   }
+if (isset($_GET['api']) && $_GET['api'] === 'fetch') {
+    // Helper for any JSON error response in this dispatcher
+    $api_json_err = function (int $status, string $msg, array $extra = []): void {
+        http_response_code($status);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['ok' => false, 'error' => $msg] + $extra, JSON_UNESCAPED_SLASHES);
+        exit;
+    };
+
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') $api_json_err(405, 'POST required');
+    $raw_in = file_get_contents('php://input') ?: '';
+    $req_in = json_decode($raw_in, true);
+    if (!is_array($req_in) || empty($req_in['url'])) $api_json_err(400, 'Invalid JSON body or missing "url"');
+
+    // SSRF guard — refuse the same blacklisted host ranges the browser flow
+    // blocks (loopback / RFC1918). Replicate the regex here to fail fast.
+    $api_host_block = '#^127\.|192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|localhost$|^::1$#i';
+    $api_url_host = (string) (@parse_url((string) $req_in['url'], PHP_URL_HOST) ?: '');
+    if ($api_url_host === '' || preg_match($api_host_block, $api_url_host)) {
+        $api_json_err(400, 'Target host blacklisted or unparseable', ['host' => $api_url_host]);
+    }
+
+    $api_result = phproxy_api_fetch($req_in);
+
+    if (($req_in['return'] ?? 'json') === 'raw') {
+        // Emit the upstream response verbatim. Drop hop-by-hop and encoding
+        // headers we've already decoded for the client.
+        if (isset($api_result['status'])) http_response_code($api_result['status']);
+        $first_ct = true;
+        foreach (($api_result['headers'] ?? []) as $hname => $hvalue) {
+            $lhname = strtolower($hname);
+            if (in_array($lhname, ['transfer-encoding', 'content-encoding', 'content-length', 'connection'], true)) continue;
+            // For Content-Type, replace any previous (default Apache sets one);
+            // for everything else, append.
+            $replace = ($lhname === 'content-type' && $first_ct);
+            header($hname . ': ' . $hvalue, $replace);
+            if ($lhname === 'content-type') $first_ct = false;
+        }
+        echo $api_result['body_raw'] ?? '';
+        exit;
+    }
+
+    // JSON envelope. UTF-8 bodies go in directly, binary gets base64'd.
+    header('Content-Type: application/json; charset=utf-8');
+    $body_raw = $api_result['body_raw'] ?? '';
+    if ($body_raw !== '' && mb_check_encoding($body_raw, 'UTF-8')) {
+        $api_result['body']          = $body_raw;
+        $api_result['body_encoding'] = 'utf8';
+    } else {
+        $api_result['body']          = base64_encode($body_raw);
+        $api_result['body_encoding'] = 'base64';
+    }
+    unset($api_result['body_raw']);
+    echo json_encode($api_result, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+    exit;
+}
+
 //
 // CONFIGURABLE OPTIONS
 //
@@ -3032,6 +3106,251 @@ foreach ($_v_cookies as $_wire => $_c):
 }
 
 // --- EMBEDDED STYLESHEETS (served via ?asset=...) ---
+
+/**
+ * JSON API: fetch a URL on behalf of the caller with the given headers,
+ * cookies and (optional) body. Pure stream_socket_client; no curl needed.
+ * Returns a structured array ready for json_encode().
+ */
+function phproxy_api_fetch(array $req): array
+{
+    $url           = (string) ($req['url'] ?? '');
+    $method        = strtoupper((string) ($req['method'] ?? 'GET'));
+    $headers_in    = is_array($req['headers'] ?? null) ? $req['headers'] : [];
+    $cookies_in    = is_array($req['cookies'] ?? null) ? $req['cookies'] : [];
+    $body          = (string) ($req['body'] ?? '');
+    $timeout       = max(1, min(120, (int) ($req['timeout'] ?? 30)));
+    $follow        = !empty($req['follow_redirects']);
+    $max_redirects = max(0, min(10, (int) ($req['max_redirects'] ?? 5)));
+    $verify_ssl    = !isset($req['verify_ssl']) || $req['verify_ssl'] !== false;
+
+    $started   = microtime(true);
+    $redirects = [];
+
+    while (true) {
+        $parts = @parse_url($url);
+        if (empty($parts['scheme']) || empty($parts['host'])) {
+            return ['ok' => false, 'error' => 'Invalid URL', 'url' => $url];
+        }
+        $scheme = strtolower($parts['scheme']);
+        if (!in_array($scheme, ['http', 'https'], true)) {
+            return ['ok' => false, 'error' => 'Only http/https schemes are allowed', 'url' => $url];
+        }
+        $host = $parts['host'];
+        $port = $parts['port'] ?? ($scheme === 'https' ? 443 : 80);
+        $path = ($parts['path'] ?? '/') . (isset($parts['query']) ? '?' . $parts['query'] : '');
+
+        // Open socket
+        $proto = $scheme === 'https' ? 'ssl' : 'tcp';
+        $ctx_opts = [];
+        if ($scheme === 'https' && !$verify_ssl) {
+            $ctx_opts['ssl'] = ['verify_peer' => false, 'verify_peer_name' => false, 'allow_self_signed' => true];
+        }
+        $ctx  = stream_context_create($ctx_opts);
+        $sock = @stream_socket_client("$proto://$host:$port", $errno, $errstr, $timeout, STREAM_CLIENT_CONNECT, $ctx);
+        if ($sock === false) {
+            return ['ok' => false, 'error' => $errstr !== '' ? $errstr : 'Connection failed', 'errno' => (int) $errno, 'url' => $url];
+        }
+        stream_set_timeout($sock, $timeout);
+
+        // Build request line + headers, sanitising every name/value to prevent
+        // CRLF injection. Caller-supplied Host / Connection / Content-Length
+        // are ignored — we set those ourselves.
+        $req_lines = [];
+        $default_port = $scheme === 'https' ? 443 : 80;
+        $req_lines[] = "$method $path HTTP/1.0";
+        $req_lines[] = "Host: $host" . ($port != $default_port ? ":$port" : '');
+        $req_lines[] = 'Connection: close';
+
+        $seen_lower = ['host' => 1, 'connection' => 1, 'content-length' => 1];
+        $headers_lower = array_change_key_case($headers_in, CASE_LOWER);
+        foreach ($headers_in as $hname => $hvalue) {
+            if (!is_string($hname) || !preg_match('/^[A-Za-z0-9-]+$/', $hname)) continue;
+            $hlower = strtolower($hname);
+            if (isset($seen_lower[$hlower])) continue;
+            $hvalue = (string) $hvalue;
+            if (strpbrk($hvalue, "\r\n") !== false) continue;
+            $req_lines[]            = "$hname: $hvalue";
+            $seen_lower[$hlower]    = 1;
+        }
+        if (!isset($headers_lower['user-agent'])) {
+            $req_lines[] = 'User-Agent: PHProxy-API/1.2.0';
+        }
+        if (!isset($headers_lower['accept'])) {
+            $req_lines[] = 'Accept: */*';
+        }
+
+        // Cookies
+        if (!empty($cookies_in)) {
+            $cookie_parts = [];
+            foreach ($cookies_in as $cname => $cvalue) {
+                if (!is_string($cname) || strpbrk($cname, ";,= \t\r\n") !== false) continue;
+                $cvalue = (string) $cvalue;
+                if (strpbrk($cvalue, ";\r\n") !== false) continue;
+                $cookie_parts[] = "$cname=$cvalue";
+            }
+            if ($cookie_parts) {
+                $req_lines[] = 'Cookie: ' . implode('; ', $cookie_parts);
+            }
+        }
+
+        // Body
+        if ($body !== '' && in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
+            $req_lines[] = 'Content-Length: ' . strlen($body);
+            if (!isset($headers_lower['content-type'])) {
+                $req_lines[] = 'Content-Type: application/octet-stream';
+            }
+        }
+
+        $request = implode("\r\n", $req_lines) . "\r\n\r\n" . $body;
+        fwrite($sock, $request);
+
+        // Read response — headers first (until \r\n\r\n), then body
+        $head_raw = '';
+        while (!feof($sock)) {
+            $chunk = fread($sock, 8192);
+            if ($chunk === false || $chunk === '') break;
+            $head_raw .= $chunk;
+            if (($sep = strpos($head_raw, "\r\n\r\n")) !== false) break;
+        }
+        $info = stream_get_meta_data($sock);
+        if (!empty($info['timed_out'])) {
+            fclose($sock);
+            return ['ok' => false, 'error' => 'Connection timed out', 'url' => $url];
+        }
+        $sep      = strpos($head_raw, "\r\n\r\n");
+        if ($sep === false) {
+            fclose($sock);
+            return ['ok' => false, 'error' => 'Malformed response (no header terminator)', 'url' => $url];
+        }
+        $head     = substr($head_raw, 0, $sep);
+        $body_raw = substr($head_raw, $sep + 4);
+        while (!feof($sock)) {
+            $chunk = fread($sock, 8192);
+            if ($chunk === false || $chunk === '') break;
+            $body_raw .= $chunk;
+        }
+        fclose($sock);
+
+        // Parse status + headers
+        $lines = explode("\r\n", $head);
+        $status_line = array_shift($lines);
+        if (!preg_match('#^HTTP/(?:\d\.\d|\d) (\d+)(?: (.*))?$#', $status_line, $sm)) {
+            return ['ok' => false, 'error' => 'Invalid status line: ' . $status_line, 'url' => $url];
+        }
+        $status      = (int) $sm[1];
+        $status_text = $sm[2] ?? '';
+
+        $resp_headers = [];
+        $set_cookies  = [];
+        foreach ($lines as $line) {
+            $colon = strpos($line, ':');
+            if ($colon === false) continue;
+            $hn = trim(substr($line, 0, $colon));
+            $hv = trim(substr($line, $colon + 1));
+            if (strcasecmp($hn, 'set-cookie') === 0) {
+                $cparts = preg_split('/;\s*/', $hv);
+                $first  = (string) array_shift($cparts);
+                $eq     = strpos($first, '=');
+                $cn     = $eq === false ? $first : substr($first, 0, $eq);
+                $cv     = $eq === false ? ''     : substr($first, $eq + 1);
+                $ck     = ['name' => $cn, 'value' => $cv, 'domain' => '', 'path' => '', 'expires' => '', 'max_age' => null, 'secure' => false, 'httponly' => false, 'samesite' => ''];
+                foreach ($cparts as $cp) {
+                    if (strcasecmp($cp, 'Secure') === 0)   { $ck['secure']   = true; continue; }
+                    if (strcasecmp($cp, 'HttpOnly') === 0) { $ck['httponly'] = true; continue; }
+                    $eq2 = strpos($cp, '=');
+                    if ($eq2 === false) continue;
+                    $k = strtolower(trim(substr($cp, 0, $eq2)));
+                    $v = trim(substr($cp, $eq2 + 1));
+                    if ($k === 'domain')   $ck['domain']   = $v;
+                    if ($k === 'path')     $ck['path']     = $v;
+                    if ($k === 'expires')  $ck['expires']  = $v;
+                    if ($k === 'samesite') $ck['samesite'] = $v;
+                    if ($k === 'max-age')  $ck['max_age']  = (int) $v;
+                }
+                $set_cookies[] = $ck;
+                continue;
+            }
+            if (isset($resp_headers[$hn])) {
+                $resp_headers[$hn] .= ', ' . $hv;
+            } else {
+                $resp_headers[$hn] = $hv;
+            }
+        }
+
+        // Redirects
+        $resp_headers_lower = array_change_key_case($resp_headers, CASE_LOWER);
+        if ($follow && in_array($status, [301, 302, 303, 307, 308], true) && !empty($resp_headers_lower['location'])) {
+            if (count($redirects) >= $max_redirects) {
+                return ['ok' => false, 'error' => 'Too many redirects', 'url' => $url, 'redirects' => $redirects];
+            }
+            $redirects[] = ['from' => $url, 'status' => $status, 'to' => $resp_headers_lower['location']];
+            $loc = $resp_headers_lower['location'];
+            if (preg_match('#^[a-z]+://#i', $loc)) {
+                $url = $loc;
+            } elseif ($loc !== '' && $loc[0] === '/') {
+                $url = "$scheme://$host" . ($port != $default_port ? ":$port" : '') . $loc;
+            } else {
+                $dir = preg_replace('#/[^/]*$#', '/', ($parts['path'] ?? '/'));
+                $url = "$scheme://$host" . ($port != $default_port ? ":$port" : '') . $dir . $loc;
+            }
+            if ($status === 303 || (in_array($status, [301, 302], true) && in_array($method, ['POST', 'PUT', 'PATCH'], true))) {
+                $method = 'GET';
+                $body   = '';
+            }
+            continue;
+        }
+
+        // Decode chunked / gzip / deflate so the JSON body is the actual payload
+        if (!empty($resp_headers_lower['transfer-encoding']) && stripos($resp_headers_lower['transfer-encoding'], 'chunked') !== false) {
+            $body_raw = phproxy_api_decode_chunked($body_raw);
+        }
+        if (!empty($resp_headers_lower['content-encoding'])) {
+            $enc = strtolower($resp_headers_lower['content-encoding']);
+            if ($enc === 'gzip' && function_exists('gzdecode')) {
+                $d = @gzdecode($body_raw);
+                if ($d !== false) $body_raw = $d;
+            } elseif ($enc === 'deflate' && function_exists('gzinflate')) {
+                $d = @gzinflate($body_raw);
+                if ($d !== false) $body_raw = $d;
+            }
+        }
+
+        return [
+            'ok'                   => true,
+            'url'                  => $url,
+            'status'               => $status,
+            'status_text'          => $status_text,
+            'headers'              => $resp_headers,
+            'set_cookies'          => $set_cookies,
+            'body_raw'             => $body_raw,
+            'redirects'            => $redirects,
+            'duration_ms'          => (int) ((microtime(true) - $started) * 1000),
+        ];
+    }
+}
+
+/**
+ * Decode an HTTP/1.1 chunked transfer-encoded body.
+ */
+function phproxy_api_decode_chunked(string $body): string
+{
+    $out = '';
+    $pos = 0;
+    $len = strlen($body);
+    while ($pos < $len) {
+        $eol = strpos($body, "\r\n", $pos);
+        if ($eol === false) break;
+        $size_line = substr($body, $pos, $eol - $pos);
+        $size_hex  = strpos($size_line, ';') !== false ? substr($size_line, 0, strpos($size_line, ';')) : $size_line;
+        $size      = (int) hexdec(trim($size_hex));
+        if ($size <= 0) break;
+        $pos        = $eol + 2;
+        $out       .= substr($body, $pos, $size);
+        $pos       += $size + 2;  // chunk + trailing CRLF
+    }
+    return $out;
+}
 
 function phproxy_index_css(): string {
     return <<<'PHPROXY_INDEX_CSS'
