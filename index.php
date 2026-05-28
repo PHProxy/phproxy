@@ -739,7 +739,7 @@ $_proxify           =
                         'application/xhtml+xml' => 1,
                         'text/css'              => 1,
                     ];
-$_version           = 'v1.3.2';
+$_version           = 'v1.3.3';
 $_http_host         = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : (isset($_SERVER['SERVER_NAME']) ? $_SERVER['SERVER_NAME'] : 'localhost');
 // https://stackoverflow.com/questions/4504831/serverhttp-host-contains-port-number-too
 $pos = strpos($_http_host, ':');
@@ -2183,35 +2183,55 @@ do
     $_request_headers .= " HTTP/1.0\r\n";
     $_request_headers .= 'Host: ' . $_url_parts['host'] . $_url_parts['port_ext'] . "\r\n";
 
-    if (!empty($_user_agent))
+    // Collect user-supplied hdr_<Name> overrides up front. When any of the
+    // defaults below have a matching override (case-insensitive), the
+    // default is skipped — the override appears in the loop further down.
+    // Host is never overridable; it's derived from the URL.
+    $_hdr_overrides = [];
+    foreach ($_COOKIE as $_ck => $_cv) {
+        if (strpos($_ck, 'hdr_') !== 0) continue;
+        $_hn = substr($_ck, 4);
+        if ($_hn !== '' && strcasecmp($_hn, 'host') !== 0
+            && preg_match('/^[A-Za-z0-9-]+$/', $_hn)
+            && strpbrk($_cv, "\r\n") === false) {
+            $_hdr_overrides[strtolower($_hn)] = $_cv;
+        }
+    }
+
+    if (!isset($_hdr_overrides['user-agent']) && !empty($_user_agent))
     {
         $_request_headers .= 'User-Agent: ' . $_user_agent . "\r\n";
     }
-    if (isset($_SERVER['HTTP_ACCEPT']))
+    if (!isset($_hdr_overrides['accept']))
     {
-        $_request_headers .= 'Accept: ' . $_SERVER['HTTP_ACCEPT'] . "\r\n";
+        if (isset($_SERVER['HTTP_ACCEPT'])) {
+            $_request_headers .= 'Accept: ' . $_SERVER['HTTP_ACCEPT'] . "\r\n";
+        } else {
+            $_request_headers .= "Accept: */*;q=0.1\r\n";
+        }
     }
-    else
-    {
-        $_request_headers .= "Accept: */*;q=0.1\r\n";
-    }
-    if ($_flags['show_referer'] && isset($_SERVER['HTTP_REFERER']) && preg_match('#^\Q' . $_script_url . '?' . $_config['url_var_name'] . '=\E([^&]+)#', $_SERVER['HTTP_REFERER'], $matches))
+    if (!isset($_hdr_overrides['referer'])
+        && $_flags['show_referer']
+        && isset($_SERVER['HTTP_REFERER'])
+        && preg_match('#^\Q' . $_script_url . '?' . $_config['url_var_name'] . '=\E([^&]+)#', $_SERVER['HTTP_REFERER'], $matches))
     {
         $_request_headers .= 'Referer: ' . decode_url($matches[1]) . "\r\n";
     }
-    if ($_flags['send_dnt'])
+    if (!isset($_hdr_overrides['dnt']) && $_flags['send_dnt'])
     {
         $_request_headers .= "DNT: 1\r\n";
     }
-    if ($_flags['send_gpc'])
+    if (!isset($_hdr_overrides['sec-gpc']) && $_flags['send_gpc'])
     {
         $_request_headers .= "Sec-GPC: 1\r\n";
     }
-    // Custom headers (managed from the Headers tab, stored as hdr_<name> cookies)
+    // User-supplied custom headers — these include both pure additions
+    // (e.g. Accept-Language) and overrides of the defaults above.
     foreach ($_COOKIE as $_ck => $_cv)
     {
         if (strpos($_ck, 'hdr_') !== 0) continue;
         $_hdr_name = substr($_ck, 4);
+        if (strcasecmp($_hdr_name, 'host') === 0) continue;
         if (preg_match('/^[A-Za-z0-9-]+$/', $_hdr_name) && strpbrk($_cv, "\r\n") === false) {
             $_request_headers .= $_hdr_name . ': ' . $_cv . "\r\n";
         }
@@ -4029,6 +4049,58 @@ foreach ($_v_cookies as $_wire => $_c):
         </form>
 
         <hr class="divider"/>
+
+<?php
+// Auto-populated list of headers that PHProxy sent on the last request.
+// Skip auto-managed and non-overridable rows. Only render on proxied pages
+// (i.e. when the trace pairs are available).
+$_replay_skip = ['host' => 1, 'cookie' => 1, 'content-length' => 1, 'content-type' => 1];
+$_replay_pairs = [];
+foreach ($_panel_request_pairs as $_rh) {
+    [$_rh_name, $_rh_value] = $_rh;
+    if ($_rh_name === '' || $_rh_name[0] === ':') continue;
+    if (isset($_replay_skip[strtolower($_rh_name)])) continue;
+    $_replay_pairs[] = [$_rh_name, $_rh_value];
+}
+?>
+<?php if (!empty($_replay_pairs)): ?>
+        <p class="section-label">Request headers</p>
+        <p class="tab-help">Headers PHProxy sent on this request. Edit any value to override it for future requests to this host; clicking <strong>Save &amp; replay</strong> stores the override and reloads the page.</p>
+        <ul class="kv-list">
+<?php foreach ($_replay_pairs as $_rh): list($_rh_name, $_rh_value) = $_rh;
+    $_is_overridden = isset($_c_headers[$_rh_name]);
+?>
+            <li class="kv-row">
+                <details class="kv-card<?php echo $_is_overridden ? ' kv-card-overridden' : ''; ?>">
+                    <summary>
+                        <span class="kv-display">
+                            <span class="kv-name"><?php echo htmlspecialchars($_rh_name); ?></span><span class="kv-sep">:</span><span class="kv-val"><?php echo htmlspecialchars(mb_strimwidth($_rh_value, 0, 72, '…')); ?></span>
+                            <?php if ($_is_overridden): ?><span class="kv-badge">overridden</span><?php endif; ?>
+                        </span>
+                        <span class="kv-chevron" aria-hidden="true">▾</span>
+                    </summary>
+                    <form class="kv-edit" method="post" action="?action=add-header">
+                        <?php echo $_panel_return_html; ?>
+                        <input type="hidden" name="headerAddName" value="<?php echo htmlspecialchars($_rh_name); ?>"/>
+                        <label class="kv-edit-field kv-edit-wide"><span>Value</span><input type="text" name="headerAddValue" value="<?php echo htmlspecialchars($_rh_value); ?>" autocomplete="off"/></label>
+                        <div class="kv-edit-actions">
+                            <button class="button-submit" type="submit">Save &amp; replay</button>
+                        </div>
+                    </form>
+                </details>
+<?php if ($_is_overridden): ?>
+                <form class="kv-delete" method="post" action="?action=delete-header">
+                    <?php echo $_panel_return_html; ?>
+                    <input type="hidden" name="name" value="<?php echo htmlspecialchars($_rh_name); ?>"/>
+                    <button class="button-icon" type="submit" title="Drop override (return to PHProxy default)" aria-label="Drop override for <?php echo htmlspecialchars($_rh_name); ?>">&times;</button>
+                </form>
+<?php endif; ?>
+            </li>
+<?php endforeach; ?>
+        </ul>
+
+        <hr class="divider"/>
+<?php endif; ?>
 
         <p class="section-label">Custom headers</p>
         <p class="tab-help">Extra HTTP headers sent on every outbound request. Header names: ASCII letters, digits, hyphens.</p>
@@ -5961,6 +6033,20 @@ p.info { background: var(--success-soft); color: var(--text); border-left: 3px s
 .kv-row-readonly .kv-card-readonly .kv-sep  { color: var(--text-muted); margin: 0 6px; }
 .kv-row-readonly .kv-card-readonly .kv-val  { color: var(--text); }
 
+.kv-card-overridden > summary { border-left: 3px solid var(--accent); }
+.kv-card-overridden .kv-name  { color: var(--accent); }
+.kv-badge {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 1px 7px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-radius: 999px;
+    font: 600 10px var(--font);
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+
 .kv-add {
     display: grid;
     grid-template-columns: 1fr 1.4fr auto;
@@ -7432,6 +7518,19 @@ function phproxy_panel_css(): string {
 #phproxy-panel .kv-row-readonly .kv-card-readonly .kv-name   { font-weight: 600; color: var(--accent); }
 #phproxy-panel .kv-row-readonly .kv-card-readonly .kv-sep    { color: var(--text-muted); margin: 0 6px; }
 #phproxy-panel .kv-row-readonly .kv-card-readonly .kv-val    { color: var(--text); }
+#phproxy-panel .kv-card-overridden > summary { border-left: 3px solid var(--accent); }
+#phproxy-panel .kv-card-overridden .kv-name  { color: var(--accent); }
+#phproxy-panel .kv-badge {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 1px 7px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-radius: 999px;
+    font: 600 10px var(--font);
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
 #phproxy-panel .kv-row-readonly .kv-card-readonly.kv-card-status {
     color: var(--accent);
     font-weight: 600;
