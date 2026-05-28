@@ -739,7 +739,7 @@ $_proxify           =
                         'application/xhtml+xml' => 1,
                         'text/css'              => 1,
                     ];
-$_version           = 'v1.2.0';
+$_version           = 'v1.3.0';
 $_http_host         = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : (isset($_SERVER['SERVER_NAME']) ? $_SERVER['SERVER_NAME'] : 'localhost');
 // https://stackoverflow.com/questions/4504831/serverhttp-host-contains-port-number-too
 $pos = strpos($_http_host, ':');
@@ -3090,10 +3090,9 @@ CSS;
             . '<input type="checkbox" id="phproxy-panel-toggle"' . ($_panel_open ? ' checked' : '') . '/>'
             . '<div id="phproxy-bar">'
             .   '<form class="row" method="post" action="' . $_action_safe . '">'
+            .     '<a class="link" href="' . $_home_safe . '">Home</a>'
             .     '<input class="url" id="____' . $_url_var_safe . '" type="text" name="' . $_url_var_safe . '" value="' . $_url_safe . '"/>'
             .     '<button class="go" type="submit" name="go">Go</button>'
-            .     '<a class="link" href="' . $_up_url_safe . '">Up</a>'
-            .     '<a class="link" href="' . $_home_safe . '">Home</a>'
             .     '<label class="gear" for="phproxy-panel-toggle" title="Open settings panel" aria-label="Open settings panel">' . $_gear . '</label>'
             .   '</form>'
             . '</div>'
@@ -4145,31 +4144,51 @@ foreach ($_v_cookies as $_wire => $_c):
     <?php endif; ?>
 
     <?php
-        $_cli_has_url = $_panel_show_cli && $_panel_cli_url !== '';
+        $_cli_has_url = $_panel_cli_url !== '';
         // Base URL for the check examples — the proxy's own URL, without
         // the ?api=fetch suffix. Falls back to $_script_url for the entry page.
         $_cli_base = $_panel_cli_api_url !== ''
             ? (string) preg_replace('/\?.*$/', '', $_panel_cli_api_url)
             : (string) ($GLOBALS['_script_url'] ?? '');
+        // When there's no URL context (entry page) we still want to show how
+        // to drive ?api=fetch — fall back to a clear placeholder URL.
+        $_cli_url_eff     = $_cli_has_url ? $_panel_cli_url     : 'https://example.com/';
+        $_cli_method_eff  = $_panel_cli_method !== '' ? $_panel_cli_method : 'GET';
+        $_cli_headers_eff = $_cli_has_url ? $_panel_cli_headers : [['User-Agent', 'PHProxy/1.0']];
+        $_cli_body_eff    = $_panel_cli_body;
+        $_cli_api_url_eff = $_panel_cli_api_url !== '' ? $_panel_cli_api_url : ($_cli_base . '?api=fetch');
         $_cli_snippets = [
-            'curl'   => ['label' => 'curl',       'checks' => phproxy_cli_checks_curl($_cli_base)],
-            'php'    => ['label' => 'PHP',        'checks' => phproxy_cli_checks_php($_cli_base)],
-            'python' => ['label' => 'Python',     'checks' => phproxy_cli_checks_python($_cli_base)],
-            'js'     => ['label' => 'JavaScript', 'checks' => phproxy_cli_checks_js($_cli_base)],
-            'go'     => ['label' => 'Go',         'checks' => phproxy_cli_checks_go($_cli_base)],
+            'curl'   => [
+                'label'  => 'curl',
+                'direct' => phproxy_cli_curl_direct($_cli_url_eff, $_cli_method_eff, $_cli_headers_eff, $_cli_body_eff),
+                'proxy'  => phproxy_cli_curl_proxy($_cli_api_url_eff, $_cli_url_eff, $_cli_method_eff, $_cli_headers_eff, [], $_cli_body_eff),
+                'checks' => phproxy_cli_checks_curl($_cli_base),
+            ],
+            'php'    => [
+                'label'  => 'PHP',
+                'direct' => phproxy_cli_php_direct($_cli_url_eff, $_cli_method_eff, $_cli_headers_eff, $_cli_body_eff),
+                'proxy'  => phproxy_cli_php_proxy($_cli_api_url_eff, $_cli_url_eff, $_cli_method_eff, $_cli_headers_eff, [], $_cli_body_eff),
+                'checks' => phproxy_cli_checks_php($_cli_base),
+            ],
+            'python' => [
+                'label'  => 'Python',
+                'direct' => phproxy_cli_python_direct($_cli_url_eff, $_cli_method_eff, $_cli_headers_eff, $_cli_body_eff),
+                'proxy'  => phproxy_cli_python_proxy($_cli_api_url_eff, $_cli_url_eff, $_cli_method_eff, $_cli_headers_eff, [], $_cli_body_eff),
+                'checks' => phproxy_cli_checks_python($_cli_base),
+            ],
+            'js'     => [
+                'label'  => 'JavaScript',
+                'direct' => phproxy_cli_js_direct($_cli_url_eff, $_cli_method_eff, $_cli_headers_eff, $_cli_body_eff),
+                'proxy'  => phproxy_cli_js_proxy($_cli_api_url_eff, $_cli_url_eff, $_cli_method_eff, $_cli_headers_eff, [], $_cli_body_eff),
+                'checks' => phproxy_cli_checks_js($_cli_base),
+            ],
+            'go'     => [
+                'label'  => 'Go',
+                'direct' => phproxy_cli_go_direct($_cli_url_eff, $_cli_method_eff, $_cli_headers_eff, $_cli_body_eff),
+                'proxy'  => phproxy_cli_go_proxy($_cli_api_url_eff, $_cli_url_eff, $_cli_method_eff, $_cli_headers_eff, [], $_cli_body_eff),
+                'checks' => phproxy_cli_checks_go($_cli_base),
+            ],
         ];
-        if ($_cli_has_url) {
-            $_cli_snippets['curl']['direct']   = phproxy_cli_curl_direct($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body);
-            $_cli_snippets['curl']['proxy']    = phproxy_cli_curl_proxy($_panel_cli_api_url, $_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, [], $_panel_cli_body);
-            $_cli_snippets['php']['direct']    = phproxy_cli_php_direct($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body);
-            $_cli_snippets['php']['proxy']     = phproxy_cli_php_proxy($_panel_cli_api_url, $_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, [], $_panel_cli_body);
-            $_cli_snippets['python']['direct'] = phproxy_cli_python_direct($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body);
-            $_cli_snippets['python']['proxy']  = phproxy_cli_python_proxy($_panel_cli_api_url, $_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, [], $_panel_cli_body);
-            $_cli_snippets['js']['direct']     = phproxy_cli_js_direct($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body);
-            $_cli_snippets['js']['proxy']      = phproxy_cli_js_proxy($_panel_cli_api_url, $_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, [], $_panel_cli_body);
-            $_cli_snippets['go']['direct']     = phproxy_cli_go_direct($_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, $_panel_cli_body);
-            $_cli_snippets['go']['proxy']      = phproxy_cli_go_proxy($_panel_cli_api_url, $_panel_cli_url, $_panel_cli_method, $_panel_cli_headers, [], $_panel_cli_body);
-        }
         $_cli_first = true;
     ?>
     <section class="tab-panel" data-tab="cli">
@@ -4177,7 +4196,7 @@ foreach ($_v_cookies as $_wire => $_c):
             <?php if ($_cli_has_url): ?>
             Reproduce this request from the command line. <strong>Direct</strong> hits the upstream target without involving PHProxy; <strong>Via PHProxy</strong> POSTs to the JSON API. <strong>Port / DNS / SSL</strong> below show how to drive the network-check endpoints from each language.
             <?php else: ?>
-            Drive the proxy's HTTP <code>?api=fetch</code> endpoint and the three network checks (<strong>Port</strong>, <strong>DNS</strong>, <strong>SSL</strong>) from the command line. Open a proxied page to also get a copy-pasteable snippet pre-filled with that specific URL.
+            How to drive every endpoint from the command line. <strong>Direct</strong> and <strong>Via PHProxy</strong> use a placeholder URL — open a proxied page and these snippets get pre-filled with that specific URL, method, headers and body. <strong>Port / DNS / SSL</strong> below drive the network-check endpoints.
             <?php endif; ?>
         </p>
         <div class="cli-wrap">
@@ -4191,22 +4210,20 @@ foreach ($_v_cookies as $_wire => $_c):
             </nav>
 <?php foreach ($_cli_snippets as $_cli_key => $_cli_meta): ?>
             <section class="cli-panel" data-cli="<?php echo $_cli_key; ?>">
-<?php if ($_cli_has_url): ?>
                 <div class="cli-variant">
                     <div class="cli-toolbar">
-                        <span class="cli-variant-label">Direct to upstream</span>
+                        <span class="cli-variant-label">Direct to upstream<?php echo $_cli_has_url ? '' : ' (example)'; ?></span>
                         <button type="button" class="button-cancel cli-copy" data-target="cli-snippet-<?php echo $_cli_key; ?>-direct">Copy</button>
                     </div>
                     <pre id="cli-snippet-<?php echo $_cli_key; ?>-direct" class="cli-snippet"><?php echo htmlspecialchars($_cli_meta['direct']); ?></pre>
                 </div>
                 <div class="cli-variant">
                     <div class="cli-toolbar">
-                        <span class="cli-variant-label">Via PHProxy <code>?api=fetch</code></span>
+                        <span class="cli-variant-label">Via PHProxy <code>?api=fetch</code><?php echo $_cli_has_url ? '' : ' (example)'; ?></span>
                         <button type="button" class="button-cancel cli-copy" data-target="cli-snippet-<?php echo $_cli_key; ?>-proxy">Copy</button>
                     </div>
                     <pre id="cli-snippet-<?php echo $_cli_key; ?>-proxy" class="cli-snippet"><?php echo htmlspecialchars($_cli_meta['proxy']); ?></pre>
                 </div>
-<?php endif; ?>
                 <div class="cli-variant">
                     <div class="cli-toolbar">
                         <span class="cli-variant-label">Port / DNS / SSL checks</span>
