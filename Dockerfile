@@ -1,4 +1,4 @@
-FROM php:8.5.11-apache@sha256:974e3a920309308e1690ed607e6cc3061d6906f90cc8d30fe519daa48bccf101
+FROM php:8.5.12-apache@sha256:4d1f268dd3b670bd003861c5385cb2f8ba7196dbc88ee84dcae47270c116f242
 
 LABEL org.opencontainers.image.title="PHProxy" \
       org.opencontainers.image.description="A self-contained PHP web proxy" \

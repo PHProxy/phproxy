@@ -1,6 +1,6 @@
 # Releasing PHProxy
 
-The release image is `miglen/phproxy`. The Dockerfile pins PHP 8.5.11 and its
+The release image is `miglen/phproxy`. The Dockerfile pins PHP 8.5.12 and its
 multi-platform base digest. Update both together when refreshing the base;
 `--pull` alone cannot upgrade a pinned digest.
 
